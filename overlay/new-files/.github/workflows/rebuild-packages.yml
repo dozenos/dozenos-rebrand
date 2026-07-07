@@ -1,0 +1,147 @@
+# DozenOS per-package (C2) rebuild workflow.
+#
+# Ported from the upstream build repo's own "trigger rebuild packages"
+# workflow (see dozenos-rebrand/WORKFLOW-POLICY.md item #8). The upstream
+# original is a *trigger only* workflow: a single `changes` job runs
+# `dorny/paths-filter` against a ~40-entry hand-maintained filter list (one
+# entry per `scripts/package-build/*` recipe), then a hand-copied `if` block
+# per package curl-dispatches a package-build run in a separate, private
+# org-scoped "reuse" repo (`secrets.REMOTE_OWNER`/`REMOTE_REUSE_REPO`) that
+# does the actual `dpkg-buildpackage`.
+#
+# DozenOS has no such private reuse repo, and dozenos-rebrand/REBRAND-PLAN.md
+# (section 3b, "replace the upstream project's dispatch + hand-copied if")
+# already specced replacing this exact mechanism with a discover job that
+# computes a *dynamic* matrix (no hand-maintained per-package filter/if list
+# to keep in sync with scripts/package-build/*), feeding a real build job
+# that runs the package build inline, in-repo. This workflow implements that
+# design. Same intent (rebuild whichever C2 packages changed) and same
+# push-to-`rolling` trigger as the upstream original, different (dynamic,
+# self-contained) mechanism for "which packages" and "how they get built."
+#
+# `linux-kernel` is excluded here on purpose: its scripts/package-build/linux-kernel/build.py
+# is a bespoke driver that never reads `pre_build_hook` (see
+# dozenos-rebrand/wire-prebuild-hooks.sh's EXCLUDE_RECIPES and
+# dozenos-rebrand/overlay/MANIFEST.md's "wire-prebuild-hooks.sh narrowing"
+# section) -- it is not a `build.py`-generic C2 recipe and needs its own,
+# separate build path, out of scope for this item.
+#
+# Publishing (apt repo / R2 upload) is intentionally NOT part of this
+# workflow: dozenos-rebrand/CI-SECRETS.md explicitly records "Not present: no
+# DOZENOS_MIRROR_URL / R2 / Cloudflare secrets. Those were dropped" -- so
+# there is currently nothing to publish to. This workflow only builds each
+# changed package and uploads the resulting .deb(s) as a workflow artifact;
+# wiring a publish step is a future item once apt/R2 hosting secrets exist.
+#
+# No package here is GPG-signed: the C2 `build_cmd` (see
+# scripts/package-build/*/package.toml) already builds with
+# `dpkg-buildpackage -us -uc` (unsigned source/changes), matching upstream.
+# dozenos-rebrand/CI-SECRETS.md's GPG role reconciliation confirms
+# `GPG_PRIVATE_KEY`'s role is narrower than the original plan (GitHub Release
+# / ISO artifact signing in the nightly-build workflow, item #17 -- not
+# per-package builds), so no GPG secret is referenced here.
+name: Rebuild DozenOS packages
+
+on:
+  push:
+    branches:
+      - rolling
+    paths:
+      - 'scripts/package-build/**'
+      - '!scripts/package-build/linux-kernel/**'
+  workflow_dispatch:
+    inputs:
+      package_name:
+        description: 'Single package dir under scripts/package-build/ to rebuild (blank = discover all non-excluded packages)'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    outputs:
+      packages: ${{ steps.set.outputs.packages }}
+      any: ${{ steps.set.outputs.any }}
+    steps:
+      - name: Checkout dozenos-build
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 2
+
+      - name: Discover changed/requested packages
+        id: set
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ inputs.package_name }}" ]; then
+            packages=$(jq -cn --arg p "${{ inputs.package_name }}" '[$p]')
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            packages=$(find scripts/package-build -mindepth 1 -maxdepth 1 -type d ! -name linux-kernel -printf '%f\n' \
+              | sort | jq -R . | jq -sc .)
+          else
+            before="${{ github.event.before }}"
+            after="${{ github.event.after }}"
+            changed=$(git diff --name-only "$before" "$after" -- scripts/package-build/ \
+              | awk -F/ '{print $2}' | sort -u | grep -vx linux-kernel || true)
+            packages=$(printf '%s\n' "$changed" | jq -R . | jq -sc 'map(select(length > 0))')
+          fi
+          echo "packages=$packages" >> "$GITHUB_OUTPUT"
+          if [ "$packages" = "[]" ]; then
+            echo "any=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "any=true" >> "$GITHUB_OUTPUT"
+          fi
+          echo "I: packages to build: $packages"
+
+  build:
+    needs: discover
+    if: needs.discover.outputs.any == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        pkg: ${{ fromJson(needs.discover.outputs.packages) }}
+    steps:
+      - name: Checkout dozenos-build
+        uses: actions/checkout@v6
+        with:
+          path: dozenos-build
+
+      # /dozenos-rebrand must exist at that exact absolute path inside the
+      # build container: every C2 recipe's package.toml carries
+      # `pre_build_hook = "/dozenos-rebrand/rename-transform.sh ."`
+      # (injected by dozenos-rebrand/wire-prebuild-hooks.sh), which build.py
+      # runs with cwd = the freshly cloned package source, shelling out to
+      # that absolute path.
+      - name: Checkout dozenos-rebrand
+        uses: actions/checkout@v6
+        with:
+          repository: dozenos/dozenos-rebrand
+          token: ${{ secrets.BUILD_PAT }}
+          path: dozenos-rebrand
+
+      - name: Free disk space (large recipes only)
+        if: contains(fromJson('["vpp"]'), matrix.pkg)
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: false
+
+      - name: Build ${{ matrix.pkg }}
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}/dozenos-build:/dozenos" \
+            -v "${{ github.workspace }}/dozenos-rebrand:/dozenos-rebrand" \
+            -w /dozenos \
+            ghcr.io/dozenos/dozenos-build:rolling \
+            bash -c "cd scripts/package-build/${{ matrix.pkg }} && python3 ../build.py"
+
+      - name: Upload built package(s)
+        uses: actions/upload-artifact@v4
+        with:
+          name: deb-${{ matrix.pkg }}
+          path: dozenos-build/scripts/package-build/${{ matrix.pkg }}/*.deb
+          if-no-files-found: warn
+          retention-days: 7

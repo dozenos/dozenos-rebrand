@@ -1,0 +1,260 @@
+# DozenOS INCREMENTAL rebuild-dispatch receiver (item #15).
+#
+# RECEIVING side of item #14's decentralized self-sync fan-out: every
+# dozenos/* mirror's generated sync.yml (../../../sync.yml.template, see
+# ../../../SYNC.md), after re-syncing itself from its own upstream, fires
+#   gh api repos/dozenos/dozenos-build/dispatches \
+#     -f event_type="dozenos-package-rebuild" \
+#     -F "client_payload[package]=<that repo's own name>"
+# via secrets.BUILD_PAT (the sync job's own GITHUB_TOKEN cannot dispatch
+# cross-repo). THIS workflow is what receives that event inside
+# dozenos-build, and its only job is to rebuild EXACTLY the changed
+# package plus whatever the dependency graph says must ALSO rebuild --
+# see ../../../dep-graph/dep-graph.json and
+# ../../../dep-graph/resolve-rebuild-set.sh (item #15's other half, the
+# bootstrap dep-graph + resolver this workflow consumes). Full spec, the
+# event_type/payload contract, and worked examples:
+# ../../../REBUILD-DISPATCH.md.
+#
+# *** THIS IS INCREMENTAL, NEVER A FULL REBUILD *** -- the `build` job's
+# matrix is ALWAYS exactly the `resolve` job's resolved set (the changed
+# package + its known transitive dependents), never
+# "every scripts/package-build/* recipe." Contrast with
+# ../rebuild-packages.yml (item #8), which rebuilds whatever changed in a
+# push to dozenos-build's OWN tree -- this workflow instead reacts to a
+# package changing in a DIFFERENT dozenos/* mirror repo and fans that one
+# change out through the dependency graph.
+#
+# Event_type/payload contract (LOCKED, must match ../../../sync.yml.template
+# exactly -- see ../../../REBUILD-DISPATCH.md's reconciliation note):
+#   event_type:      dozenos-package-rebuild
+#   client_payload:  { "package": "<dozenos/* mirror repo name>" }
+#
+# `linux-kernel` family handling: scripts/package-build/linux-kernel/ is one
+# bespoke C1 recipe directory (its own build.py, not the generic
+# scripts/package-build/build.py every other C2 recipe uses) whose
+# package.toml declares the kernel PLUS every OOT kernel module as separate
+# `--packages <name>`-selectable blocks sharing one working directory and a
+# build-order dependency (the kernel must build before any OOT module reads
+# its output) -- see ../../../dep-graph/dep-graph.json's naming note and
+# ../../../MLNX-AND-DWARF.md for the neutral-mount requirement this build
+# job's /dozenos mount already satisfies. The `resolve` job therefore
+# collapses linux-kernel + any of its resolved dependents into ONE
+# `linux-kernel` matrix entry (never N independent per-block jobs), and the
+# `build` job's `linux-kernel` branch runs `python3 build.py` with NO
+# `--packages` filter (builds every block, kernel first, matching how a
+# kernel-ABI bump genuinely requires every OOT module to rebuild together).
+name: DozenOS incremental rebuild (dispatch receiver)
+
+on:
+  repository_dispatch:
+    types: [dozenos-package-rebuild]
+  workflow_dispatch:
+    inputs:
+      package:
+        description: 'Package name to resolve+rebuild (same value client_payload.package would carry, e.g. vpp, linux-kernel, vyconf) -- for manual testing of the resolver/build path'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dozenos-rebuild-dispatch-${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  # ------------------------------------------------------------------------- #
+  # Job A: resolve -- read client_payload.package (or the manual test input),
+  # run resolve-rebuild-set.sh against the bootstrap dep-graph, and collapse
+  # the linux-kernel family (if present in the result) into one matrix entry.
+  # ------------------------------------------------------------------------- #
+  resolve:
+    runs-on: ubuntu-latest
+    outputs:
+      package: ${{ steps.pkg.outputs.package }}
+      matrix: ${{ steps.resolve.outputs.matrix }}
+      any: ${{ steps.resolve.outputs.any }}
+    steps:
+      - name: Determine changed package
+        id: pkg
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            PACKAGE="${{ inputs.package }}"
+          else
+            PACKAGE="${{ github.event.client_payload.package }}"
+          fi
+          if [ -z "$PACKAGE" ]; then
+            echo "::error::no package name found -- repository_dispatch client_payload.package was empty/missing, or the workflow_dispatch 'package' input was blank. Expected event_type dozenos-package-rebuild with client_payload.package set (see ../../../SYNC.md / ../../../REBUILD-DISPATCH.md)." >&2
+            exit 1
+          fi
+          echo "I: changed package: $PACKAGE"
+          echo "package=$PACKAGE" >> "$GITHUB_OUTPUT"
+
+      # dep-graph/ (dep-graph.json + resolve-rebuild-set.sh) lives in
+      # dozenos-rebrand, same cross-repo checkout every other dozenos-build
+      # workflow already does (see ../rebuild-packages.yml's own comment on
+      # why -- here it's the resolver + graph, not pre_build_hook, but the
+      # checkout is the same one).
+      - name: Checkout dozenos-rebrand
+        uses: actions/checkout@v6
+        with:
+          repository: dozenos/dozenos-rebrand
+          token: ${{ secrets.BUILD_PAT }}
+          path: dozenos-rebrand
+
+      - name: Resolve incremental rebuild set
+        id: resolve
+        run: |
+          set -euo pipefail
+          PACKAGE="${{ steps.pkg.outputs.package }}"
+          GRAPH="dozenos-rebrand/dep-graph/dep-graph.json"
+
+          CLOSURE_JSON=$(dozenos-rebrand/dep-graph/resolve-rebuild-set.sh "$PACKAGE" --json)
+          echo "I: transitive closure for '$PACKAGE': $CLOSURE_JSON"
+
+          # Collapse the linux-kernel family into one matrix entry -- see
+          # this workflow's own header comment for why. The family set is
+          # read straight from dep-graph.json (not duplicated here) so it
+          # can never drift from what resolve-rebuild-set.sh itself would
+          # report for "linux-kernel".
+          KERNEL_FAMILY=$(jq -c '(.reverse_dependencies["linux-kernel"] // []) + ["linux-kernel"]' "$GRAPH")
+          MATRIX=$(jq -cn --argjson closure "$CLOSURE_JSON" --argjson family "$KERNEL_FAMILY" '
+            ($closure - $family) as $rest
+            | (if ($closure | any(. as $c | $family | index($c) != null))
+               then ["linux-kernel"] else [] end) as $kernel_entry
+            | ($rest + $kernel_entry) | sort
+          ')
+          echo "I: build matrix (linux-kernel family collapsed if present): $MATRIX"
+          echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
+
+          if [ "$MATRIX" = "[]" ]; then
+            echo "any=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "any=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  # ------------------------------------------------------------------------- #
+  # Job B: build -- INCREMENTAL. The matrix is exactly `resolve`'s resolved
+  # set, never the full scripts/package-build/* tree. Same build shape as
+  # ../rebuild-packages.yml (item #8): ghcr.io/dozenos/dozenos-build:rolling,
+  # /dozenos + /dozenos-rebrand mounts, upload deb-<pkg> artifacts -- plus the
+  # linux-kernel-family special case described above.
+  # ------------------------------------------------------------------------- #
+  build:
+    needs: resolve
+    if: needs.resolve.outputs.any == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        pkg: ${{ fromJson(needs.resolve.outputs.matrix) }}
+    steps:
+      - name: Checkout dozenos-build
+        uses: actions/checkout@v6
+        with:
+          path: dozenos-build
+
+      # Required for every C2 recipe's `pre_build_hook =
+      # "/dozenos-rebrand/rename-transform.sh ."` (see
+      # ../rebuild-packages.yml's own comment) -- same absolute-path
+      # requirement applies whether the build reached this package through a
+      # push to dozenos-build itself (item #8) or, as here, an incremental
+      # dispatch from a dependency mirror (item #15).
+      - name: Checkout dozenos-rebrand
+        uses: actions/checkout@v6
+        with:
+          repository: dozenos/dozenos-rebrand
+          token: ${{ secrets.BUILD_PAT }}
+          path: dozenos-rebrand
+
+      - name: Free disk space (large recipes only)
+        if: contains(fromJson('["vpp", "linux-kernel"]'), matrix.pkg)
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: false
+
+      # Neutral /dozenos mount + neutral dozenos_bld build user (see
+      # ../../../MLNX-AND-DWARF.md #25) applies identically to every matrix
+      # entry here, kernel/OOT included -- there is no separate upstream-org-
+      # mounted code path anywhere in this workflow to accidentally take.
+      - name: Build ${{ matrix.pkg }}
+        run: |
+          set -euo pipefail
+          if [ "${{ matrix.pkg }}" = "linux-kernel" ]; then
+            # linux-kernel family: ONE build.py invocation, no --packages
+            # filter, builds every package.toml block (kernel first, then
+            # every OOT module) -- see this workflow's header comment.
+            docker run --rm \
+              -v "${{ github.workspace }}/dozenos-build:/dozenos" \
+              -v "${{ github.workspace }}/dozenos-rebrand:/dozenos-rebrand" \
+              -w /dozenos \
+              ghcr.io/dozenos/dozenos-build:rolling \
+              bash -c "cd scripts/package-build/linux-kernel && python3 build.py"
+          else
+            docker run --rm \
+              -v "${{ github.workspace }}/dozenos-build:/dozenos" \
+              -v "${{ github.workspace }}/dozenos-rebrand:/dozenos-rebrand" \
+              -w /dozenos \
+              ghcr.io/dozenos/dozenos-build:rolling \
+              bash -c "cd scripts/package-build/${{ matrix.pkg }} && python3 ../build.py"
+          fi
+
+      - name: Upload built package(s)
+        uses: actions/upload-artifact@v4
+        with:
+          name: deb-${{ matrix.pkg }}
+          path: dozenos-build/scripts/package-build/${{ matrix.pkg }}/*.deb
+          if-no-files-found: warn
+          retention-days: 7
+
+  # ------------------------------------------------------------------------- #
+  # Job C: trigger-iso -- fire an ISO rebuild off the just-updated debs.
+  #
+  # DECISION: primarily trigger the IN-REPO `package-smoketest.yml` (item
+  # #13's ISO integration workflow, already lives in this same dozenos-build
+  # repo, already builds a real ISO and best-effort-merges recent deb-*
+  # artifacts into an ephemeral apt repo, see ../../../ISO-BUILD.md). That
+  # workflow already exists and already runs a real `build-dozenos-image`
+  # today; a same-repo `workflow_dispatch` needs only the job's own
+  # GITHUB_TOKEN (with `actions: write`), no cross-repo credential.
+  #
+  # dozenos/dozenos-nightly-build (item #17) is NOT yet created (see
+  # ../../../DISTRIBUTION.md/../../../WORKFLOW-POLICY.md) -- once it exists,
+  # it is the "full, guaranteed-fresh" nightly counterpart
+  # (../../../ISO-BUILD.md §5's own "what item #17 should do instead" note).
+  # This job ALSO best-effort-notifies it by name via BUILD_PAT
+  # (cross-repo dispatch needs BUILD_PAT, not GITHUB_TOKEN -- see
+  # ../../../CI-SECRETS.md), guarded with `continue-on-error: true` so a 404
+  # against a not-yet-existing repo never fails this job; once item #17
+  # lands, this step starts working with zero changes needed here.
+  # ------------------------------------------------------------------------- #
+  trigger-iso:
+    needs: [resolve, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - name: Trigger in-repo ISO integration build (package-smoketest.yml)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run package-smoketest.yml --repo "${{ github.repository }}"
+          echo "I: dispatched package-smoketest.yml on ${{ github.repository }} (in-repo ISO integration build)"
+
+      - name: Best-effort notify dozenos-nightly-build (item #17, not yet created)
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.BUILD_PAT }}
+        run: |
+          set -uo pipefail
+          if gh api repos/dozenos/dozenos-nightly-build/dispatches \
+            -f event_type="dozenos-incremental-rebuild-complete" \
+            -F "client_payload[package]=${{ needs.resolve.outputs.package }}" 2>&1; then
+            echo "I: notified dozenos/dozenos-nightly-build"
+          else
+            echo "I: dozenos/dozenos-nightly-build dispatch failed -- expected until item #17 creates that repo; non-fatal (continue-on-error)"
+          fi

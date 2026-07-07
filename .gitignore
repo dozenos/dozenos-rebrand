@@ -1,0 +1,40 @@
+# dozenos-rebrand top-level .gitignore
+#
+# This is belt-and-suspenders on top of keys/.gitignore (which contains a
+# bare `*` and already excludes everything under keys/, including itself).
+# Do NOT remove the keys/ rule below even though it looks redundant -- two
+# independent ignore rules make an accidental `git add -f keys/...` far less
+# likely to succeed silently.
+
+# ---------------------------------------------------------------------------
+# Real throwaway-dev private key material -- NEVER publish.
+# ---------------------------------------------------------------------------
+/keys/
+
+# ---------------------------------------------------------------------------
+# Editor / OS / VCS cruft.
+# ---------------------------------------------------------------------------
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# ---------------------------------------------------------------------------
+# Transient build/test output.
+# ---------------------------------------------------------------------------
+*.tmp
+*.log
+__pycache__/
+*.pyc
+
+# release/make-ephemeral-apt-repo.sh, sign-and-publish.sh, mirror-push.sh,
+# and several test/*.sh scripts default their scratch/output dirs to
+# `mktemp -d` (out-of-tree, under /tmp) -- they do not create in-tree scratch
+# directories by default. The entries below only guard against someone
+# invoking a script's `--work <dir>` / `--out-dir <dir>` override to point
+# in-tree, so a stray local run can never get committed.
+/scratch/
+/.scratch/
+/work/
+/*.scratch/

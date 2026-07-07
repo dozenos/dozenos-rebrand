@@ -1,0 +1,272 @@
+{
+  "_comment": [
+    "DozenOS package rebuild dependency graph -- item #15 bootstrap,",
+    "coverage/correctness completed by item #16.",
+    "",
+    "This file is the ROUTING input for the item #15 incremental-rebuild",
+    "receiver (dozenos-rebrand/dep-graph/resolve-rebuild-set.sh, consumed by",
+    "overlay/new-files/.github/workflows/rebuild-dispatch.yml in",
+    "dozenos-build). It answers exactly one question: 'package X just",
+    "changed (a dozenos/* mirror self-synced and dispatched X's name) --",
+    "which OTHER packages must ALSO rebuild because they depend on X at",
+    "build time?'",
+    "",
+    "*** ITEM #16: COVERAGE COMPLETE ***",
+    "Item #15 shipped this file as a BOOTSTRAP covering only the",
+    "cross-package edges already known from the local-build powerloop (see",
+    "memory/dozenos-build-dependency-graph.md). Item #16 (this pass) walked",
+    "EVERY scripts/package-build/*/package.toml (48 recipe dirs on the",
+    "mode-B reproduced tree, verified via `find scripts/package-build -name",
+    "package.toml`) plus the bespoke linux-kernel/package.toml's 16",
+    "`--packages`-selectable blocks -- 63 unique C2 package/block identifiers",
+    "total -- and added an explicit node (a key, or membership in some key's",
+    "dependents array) for every single one that was missing. See the new",
+    "'_coverage' note below for the exact accounting (was 17/63, now 63/63).",
+    "A package name that still cannot be found anywhere in this file after",
+    "this pass is either a bug (file a correction) or a package added to",
+    "scripts/package-build/ SINCE this pass ran (upstream sync drift --",
+    "re-run the coverage check in '_coverage' to find it).",
+    "",
+    "Item #16 also added real edges beyond the #15 bootstrap, each with a",
+    "provenance citation to the actual build script / debian/control line",
+    "that proves it (see the dependents added under 'linux-kernel' -- 'igb'",
+    "and 'qat' -- and the new 'dozenos-vpp-patches', 'wpa', 'pkg-libnftnl',",
+    "'libyang', 'libtacplus-map' keys, all documented in",
+    "'_notes' below). Where an edge could not be verified from source, it was",
+    "deliberately NOT added -- see '_notes.unverified_needs_human'.",
+    "",
+    "This file and resolve-rebuild-set.sh remain the STABLE INTERFACE #15",
+    "defined -- the JSON shape (a flat 'reverse_dependencies' map) and the",
+    "resolver's CLI/behavior are UNCHANGED by #16; only the edge list grew,",
+    "plus one new top-level 'iso_hard_deps' section (see its own comment)",
+    "that is deliberately NOT part of 'reverse_dependencies' (a Depends:/pin",
+    "relationship in package metadata, not a build-time rebuild-fanout edge",
+    "-- conflating the two would make resolve-rebuild-set.sh rebuild the",
+    "wrong things on an ISO-hard-dep change).",
+    "",
+    "Schema: 'reverse_dependencies' maps a package name to the list of",
+    "packages that must ALSO be rebuilt when that package changes (i.e. this",
+    "is already the reverse/consumer-facing direction routing needs -- NOT",
+    "vpp's normal 'what does vpp need built first' forward build-order view).",
+    "Package identifiers are the same strings the item #14 sync.yml dispatch",
+    "sends as client_payload.package -- i.e. the dozenos/* mirror repo name",
+    "(== github.event.repository.name of whichever mirror just self-synced).",
+    "Where a mirror repo produces multiple named .deb outputs from one",
+    "source (e.g. strongswan also emits libstrongswan/libcharon-*), the graph",
+    "node is the mirror/recipe name, not each individual .deb.",
+    "",
+    "Direct edges only -- resolve-rebuild-set.sh computes the TRANSITIVE",
+    "closure (a change can cascade through more than one hop, e.g.",
+    "vyconf -> libdozenosconfig0 -> dozenos-1x).",
+    "",
+    "NAMING NOTE -- linux-kernel's dependents use package.toml BLOCK names,",
+    "not .deb names: scripts/package-build/linux-kernel/ is one bespoke C1",
+    "recipe directory whose package.toml declares 16 [[packages]] blocks",
+    "(linux-kernel, linux-firmware, accel-ppp-ng, nat-rtsp, qat, igb, ixgbe,",
+    "ixgbevf, i40e, ice, iavf, jool, mlnx, realtek-r8126, realtek-r8152,",
+    "ipt-netflow), each selectable via build.py's own `--packages <name>`",
+    "(the block's `name =` field, e.g. \"i40e\", NOT the shipped .deb name",
+    "\"dozenos-intel-i40e\"). The dependents listed under \"linux-kernel\"",
+    "below are exactly those block names, so",
+    "rebuild-dispatch.yml's build job can pass them straight through to",
+    "`python3 build.py --packages ...` with no name translation. `igb` and",
+    "`qat` are real additional blocks in package.toml NOT included below --",
+    "the known-edges list this bootstrap was built from (see",
+    "memory/dozenos-build-dependency-graph.md) only names",
+    "i40e/iavf/ice/ixgbe/ixgbevf, so `igb`/`qat` are left for item #16 to add",
+    "rather than guessed at here. `linux-firmware` is also a real block, but",
+    "deliberately NOT listed as a kernel-ABI dependent: firmware blobs are",
+    "not recompiled against a specific kernel vermagic, so a kernel bump does",
+    "not require a firmware rebuild (unlike every other OOT module here)."
+  ],
+
+  "reverse_dependencies": {
+    "vpp": [
+      "accel-ppp-ng"
+    ],
+
+    "linux-kernel": [
+      "i40e",
+      "iavf",
+      "ice",
+      "ixgbe",
+      "ixgbevf",
+      "realtek-r8126",
+      "realtek-r8152",
+      "jool",
+      "nat-rtsp",
+      "ipt-netflow",
+      "accel-ppp-ng",
+      "mlnx",
+      "igb",
+      "qat"
+    ],
+
+    "vyconf": [
+      "libdozenosconfig0"
+    ],
+    "dozenos1x-config": [
+      "libdozenosconfig0"
+    ],
+    "libdozenosconfig0": [
+      "dozenos-1x"
+    ],
+
+    "strongswan": [
+      "python3-vici"
+    ],
+
+    "isc-kea-common": [
+      "isc-kea-dhcp4",
+      "isc-kea-dhcp6",
+      "isc-kea-dhcp-ddns",
+      "isc-kea-hooks"
+    ],
+
+    "libyang3": [
+      "frr"
+    ],
+
+    "libtac2": [
+      "libnss-tacplus",
+      "libpam-tacplus"
+    ],
+    "libtacplus-map1": [
+      "libnss-tacplus",
+      "libpam-tacplus"
+    ],
+
+    "dozenos-vpp-patches": [
+      "vpp"
+    ],
+    "wpa": [
+      "hostap"
+    ],
+    "pkg-libnftnl": [
+      "pkg-nftables"
+    ],
+    "libyang": [
+      "frr"
+    ],
+    "libtacplus-map": [
+      "libpam-tacplus",
+      "libnss-tacplus"
+    ],
+    "libpam-tacplus": [
+      "libnss-tacplus"
+    ],
+
+    "amazon-cloudwatch-agent": [],
+    "amazon-ssm-agent": [],
+    "aws-gwlbtun": [],
+    "bash-completion": [],
+    "blackbox_exporter": [],
+    "ddclient": [],
+    "dozenos-http-api-tools": [],
+    "dropbear": [],
+    "ethtool": [],
+    "frr_exporter": [],
+    "hsflowd": [],
+    "hvinfo": [],
+    "ipaddrcheck": [],
+    "isc-dhcp": [],
+    "isc-kea": [],
+    "keepalived": [],
+    "libhtp": [],
+    "libnss-mapuser": [],
+    "libpam-radius-auth": [],
+    "linux-firmware": [],
+    "ndppd": [],
+    "net-snmp": [],
+    "netfilter": [],
+    "node_exporter": [],
+    "openssl": [],
+    "openvpn-otp": [],
+    "owamp": [],
+    "podman": [],
+    "pyhumps": [],
+    "radvd": [],
+    "shim-signed": [],
+    "squid": [],
+    "tacacs": [],
+    "telegraf": [],
+    "udp-broadcast-relay": [],
+    "unionfs-fuse": [],
+    "vyatta-bash": [],
+    "vyatta-biosdevname": [],
+    "vyatta-cfg": [],
+    "waagent": [],
+    "wide-dhcpv6": [],
+    "xen-guest-agent": [],
+    "zerotier-one": []
+  },
+
+  "_notes": {
+    "accel-ppp-ng": "Has TWO known upstream triggers, both recorded above: vpp (build-accel-ppp-ng.sh builds vpp first and links HAVE_VPP=1 against vpp-dev/libvppinfra-dev) AND linux-kernel (accel-ppp-ng is itself one of linux-kernel's package.toml blocks -- its ipoe/vlan_mon kernel modules are OOT, built against the exact kernel ABI, same as every other OOT module below). A change to either vpp or linux-kernel must rebuild accel-ppp-ng -- this is not a duplicate, it is two independent real edges converging on one package. Unlike its vpp edge, accel-ppp-ng has NO separate scripts/package-build/accel-ppp-ng/ directory of its own -- both edges resolve to the SAME build (inside scripts/package-build/linux-kernel/, see the naming note above), which is why rebuild-dispatch.yml's build job special-cases every linux-kernel-family name (including accel-ppp-ng) onto one combined job rather than the generic per-directory build path.",
+    "mlnx": "Mellanox OFED, built by scripts/package-build/linux-kernel/build-mellanox-ofed.sh (see MLNX-AND-DWARF.md). Not currently produced by the local build trial, but it is one of linux-kernel's bespoke blocks and needs the same kernel-ABI match as every other OOT module, so it is included as a linux-kernel dependent.",
+    "libdozenosconfig0_chain": "dozenos-1x's OCaml config libs: vyconf and dozenos1x-config (renamed vyos1x-config) are opam-pinned into libdozenosconfig0, which dozenos-1x itself depends on. Build order is vyconf/dozenos1x-config -> libdozenosconfig0 -> dozenos-1x; this reverse map therefore routes a vyconf OR dozenos1x-config change through libdozenosconfig0 and on to dozenos-1x (transitive closure, see resolve-rebuild-set.sh).",
+    "generic_iso_hard_deps_not_modeled_here": "The 'Generic-ISO HARD deps' from the project dep-graph memory (dozenos-1x hard-Depends the full vpp set incl vpp-dev; development.toml requires dozenos-1x-smoketest; vyatta-cfg exact-pins bash-completion = 1:2.8-6) are Depends/pin RELATIONSHIPS inside package metadata and the ISO package-list, not build-time source dependencies that require a REBUILD of the depending package when the dependency changes -- dozenos-1x already appears as a rebuild target via the libdozenosconfig0 chain above for its own reasons. Item #16 verified all three against the real upstream debian/control files (see the top-level 'iso_hard_deps' section below for the exact quotes + how the ISO build / ephemeral-apt-repo consume them) and confirmed they are correctly NOT encoded as reverse-dependency edges here: encoding a Depends:/pin as a 'must rebuild' edge would be a different (and wrong) claim -- these three are asserted at ISO-assembly/apt-resolve time instead, not at rebuild-fanout time.",
+
+    "item16_dozenos_vpp_patches": "dozenos-vpp-patches IS a real, individually dozenos-org-mirrored repo (scripts/package-build/vpp/package.toml's 'dozenos-vpp-patches' block, scm_url https://github.com/dozenos/dozenos-vpp-patches -- see overlay/value-fixes/pin-helper-scm-urls.sh's own entry for it), unlike the bootstrap's existing 'vpp' key (which represents the FDio/vpp upstream fetch, commit_id-pinned, not a self-syncing dozenos/* mirror). Evidence this is a real build-order edge: the 'vpp' block's own pre_build_hook does `rsync -av ../dozenos-vpp-patches/patches/vpp/ ../patches/vpp/`, and its build_cmd then applies every file under that directory via `git am` before invoking `make ... pkg-deb`. So when the dozenos-vpp-patches mirror self-syncs (a new/changed patch), the actual dispatchable trigger is 'dozenos-vpp-patches', which must fan out through 'vpp' (this new edge) and, transitively, on to 'accel-ppp-ng' (the existing vpp->accel-ppp-ng edge) -- this closes that path.",
+    "item16_wpa_hostap": "wpa and hostap are the hostap recipe's two package.toml blocks (scripts/package-build/hostap/). Evidence hostap's build genuinely consumes wpa's output: hostap/build.sh sets `SRC=hostap` `SRC_DEB=wpa` then runs `cp -a ${SRC_DEB}/debian ${SRC}` -- it copies wpa's (salsa.debian.org/debian/wpa) Debian packaging directory wholesale into hostap's own source tree before building, so a change to wpa's debian/ (patches, control, rules) requires rebuilding hostap even though hostap's own upstream (git.w1.fi/hostap.git) did not change.",
+    "item16_pkg_libnftnl_pkg_nftables": "pkg-libnftnl and pkg-nftables are the netfilter recipe's two package.toml blocks (scripts/package-build/netfilter/). Evidence: the pkg-nftables block's own build_cmd is `sudo dpkg -i ../libnftnl*.deb; sudo mk-build-deps --install ...; dpkg-buildpackage -uc -us -tc -b` -- it installs the freshly-built libnftnl .deb (produced by the pkg-libnftnl block, which build.py always builds first since it is declared first in package.toml and the generic build.py iterates packages in file order) before building nftables, a genuine build-order dependency matching recipe-worklist.md's own note that libnftables1 is 'a hard dep of nftables.'",
+    "item16_libyang_frr": "libyang is the block-name form of the frr recipe's first block (scripts/package-build/frr/package.toml declares `name = \"libyang\"`, NOT 'libyang3' -- 'libyang3' is the shipped .deb's binary package name, already used as the bootstrap's key and left unchanged for compatibility with the existing tested closure). Evidence of the real edge, verified against the actual upstream (not just the local build_cmd's `dpkg -i`): FRRouting/frr's real debian/control (tag frr-10.6.1, fetched from https://raw.githubusercontent.com/FRRouting/frr/frr-10.6.1/debian/control) declares `Build-Depends: ... libyang-dev (>= 3.0.3) | libyang2-dev (>= 2.1.128), ...` -- frr genuinely cannot build without libyang's -dev package, confirmed at the Debian-packaging level, not just inferred from the local pre_build_hook's dpkg -i step.",
+    "item16_tacacs_block_names": "libtacplus-map and libpam-tacplus (added here in their package.toml BLOCK-name form, additive alongside the bootstrap's existing libtacplus-map1/libtac2 .deb-name keys which are left unchanged for compatibility with the existing tested closures) are two of the tacacs recipe's three package.toml blocks (scripts/package-build/tacacs/). Evidence, verified against the real upstream debian/control (not just the local build_cmd's dpkg -i globs): vyos/libpam-tacplus's debian/control (rolling branch) declares `Package: libpam-tacplus` `Depends: ${shlibs:Depends}, ${misc:Depends}, libpam-runtime, libtac2, libtacplus-map1` -- a genuine cross-source dependency on libtacplus-map's output (libtacplus-map1). vyos/libnss-tacplus's debian/control declares `Package: libnss-tacplus` `Depends: ${shlibs:Depends}, ${misc:Depends}, libtac2 (>= 1.4.1~), libtacplus-map1, libaudit1` -- depends on BOTH libtacplus-map's output (libtacplus-map1) and libpam-tacplus's own co-produced libtac2 binary. Note libtac2 is a binary package produced BY the libpam-tacplus SOURCE build itself (libpam-tacplus's debian/control also declares `Package: libtac2`) -- it is not an independent recipe/mirror, so the bootstrap's existing 'libtac2' key listing 'libpam-tacplus' as one of its own dependents is a harmless, conservative, same-source self-reference (rebuilding libpam-tacplus is what produces a libtac2 change in the first place, so this is redundant, not wrong -- left untouched rather than removed, to avoid changing an already-tested closure).",
+    "item16_isc_kea_same_source_note": "The bootstrap's existing 'isc-kea-common' key and its isc-kea-dhcp4/isc-kea-dhcp6/isc-kea-dhcp-ddns/isc-kea-hooks dependents are ALL binary packages produced by the SAME single source build (scripts/package-build/isc-kea/, one package.toml block, name=\"isc-kea\") -- verified against the real packaging source (gitlab.isc.org/isc-projects/kea-packaging, branch Kea-3.0.3, fetched via prebuild.sh's own `git clone --branch ${BRANCH} .../kea-packaging.git`): its debian/control declares e.g. `Package: isc-kea-dhcp4` `Depends: isc-kea-common (= ${binary:Version}), ...` -- an EXACT same-source-build version pin (${binary:Version}), which always self-satisfies for co-produced binaries and is not a cross-package/cross-mirror rebuild trigger. Like the tacacs libtac2 case above, this edge is a harmless conservative same-source self-reference, not a bug, and is left as-is (already tested). The recipe directory itself ('isc-kea') is separately covered as its own leaf node below since scripts/package-build/isc-kea is the actual independently-buildable unit (gitlab.isc.org is third-party upstream, not yet a dozenos/* mirror).",
+    "item16_igb_qat": "igb and qat are the two package.toml blocks the #15 bootstrap's own comment flagged as 'real additional blocks ... NOT included ... left for item #16 to add.' Evidence of kernel-ABI coupling (same as every other OOT module already in this list): scripts/package-build/linux-kernel/build-intel-nic.sh (shared by igb, the same script every other Intel NIC driver -- i40e/ice/iavf/ixgbe/ixgbevf -- already-listed above uses) reads a `kernel-vars` file for `KERNEL_DIR`/`KERNEL_VERSION` and runs `make KSRC=${KERNEL_DIR} BUILD_KERNEL=${KERNEL_VERSION}${KERNEL_SUFFIX} ... -C src install`; scripts/package-build/linux-kernel/build-intel-qat.sh likewise requires the same `kernel-vars`/`KERNEL_DIR` and applies 'patches for newer kernels/backports'. Both must therefore rebuild whenever linux-kernel changes, exactly like every other block in this list.",
+    "item16_rebuild_dispatch_directory_mapping_gap": "NEEDS-HUMAN (flagged, not fixed here -- out of this item's scope, which is the graph/resolver/tests, not overlay/new-files/.github/workflows/rebuild-dispatch.yml, an already-landed item #15 file). rebuild-dispatch.yml's build job does a literal `cd scripts/package-build/${{ matrix.pkg }}` for every non-linux-kernel matrix entry (see that file's 'Build ${{ matrix.pkg }}' step) -- this requires matrix.pkg to be an actual scripts/package-build/ directory NAME. Several identifiers already used as bootstrap VALUES are NOT directory names: 'python3-vici' (produced by the strongswan recipe's own build-vici.sh, no directory of its own), 'libtac2'/'libtacplus-map1' (deb names; the real directory is 'tacacs'), 'isc-kea-common'/'isc-kea-dhcp4'/'isc-kea-dhcp6'/'isc-kea-dhcp-ddns'/'isc-kea-hooks' (deb names; the real directory is 'isc-kea'), 'libyang3' (deb name; the real directory is 'frr'). If any of these ever appears in a resolved rebuild matrix (e.g. resolving 'strongswan' includes 'python3-vici'), the build job's `cd` would fail (no such directory). This is a pre-existing gap in the already-tested/landed #15 bootstrap (its own test suite never exercises the real directory, only the resolver's set-membership logic), not something item #16 introduced. Recommended fix for whoever picks this up: either (a) rebuild-dispatch.yml's build job should look up each matrix entry's containing recipe directory before `cd`-ing (this graph already has enough information to build that lookup table if it is added as a new top-level section), or (b) collapse each of these non-directory identifiers' rebuild action onto their containing recipe directory the same way the linux-kernel family is already collapsed onto one 'linux-kernel' matrix entry. Not fixed here because it requires editing rebuild-dispatch.yml itself, which is outside this item's stated deliverables (dep-graph.json + resolve-rebuild-set.sh + tests + docs).",
+    "unverified_needs_human": "Edges considered but NOT added because they could not be verified from source in this pass: (1) isc-dhcp (scripts/package-build/isc-dhcp/, salsa.debian.org/debian/isc-dhcp) -- no scan of its debian/control turned up a Build-Depends on any other C2 recipe's output; likely a true leaf, but the upstream debian/control was not fetched in this pass (network-fetched sources were prioritized for packages already suspected of cross-package coupling), so it is left as a leaf rather than asserted leaf-with-certainty. (2) openssl's FIPS patch (recipe-worklist.md notes a VyOS FIPS-enable patch) was NOT checked for whether any other recipe's build-time Depends requires the FIPS-specific build vs. stock Debian openssl -- if some other recipe's debian/control pins a FIPS-specific openssl feature this would be a missed edge; not verified, not added. (3) squid, net-snmp, keepalived, dropbear, ethtool, wide-dhcpv6, ndppd and the remaining single-block Debian-tracked C2 recipes were enumerated as coverage leaves but their debian/control Build-Depends were not individually cross-referenced against every other recipe's binary package names -- a real edge here is possible but unconfirmed; do not assume completeness beyond what is explicitly documented in this file's other _notes entries.",
+    "coverage": "Item #16 COMPLETE (was: 'every recipe name under scripts/package-build/ NOT appearing as a key or a value above ... is an intentional leaf for THIS bootstrap'). All 47 non-linux-kernel scripts/package-build/*/package.toml recipe directories plus all 16 linux-kernel/package.toml `--packages`-selectable blocks (63 unique C2 package/block identifiers total, enumerated by walking the mode-B reproduced tree with `find scripts/package-build -name package.toml`) now appear at least once in 'reverse_dependencies', either as a key or inside some key's dependents array. resolve-rebuild-set.sh's 'is_known' is therefore true for every one of them -- the unknown-package warning now fires ONLY for a genuinely new recipe added to scripts/package-build/ after this pass (upstream sync drift), never for anything that existed at the time of this audit. See test/test-resolve-rebuild-set.sh's 'item #16 coverage' assertions for the automated re-check."
+  },
+
+  "iso_hard_deps": {
+    "_comment": [
+      "Generic-ISO HARD deps (item #16) -- a DIFFERENT concern from",
+      "'reverse_dependencies' above: packages that must ALWAYS be present",
+      "and resolvable in the generic ISO / its ephemeral apt repo (see",
+      "release/make-ephemeral-apt-repo.sh, ISO-BUILD.md item #13),",
+      "regardless of which package just changed. These are Depends:/pin",
+      "RELATIONSHIPS in package metadata and the ISO build-type package",
+      "list, NOT build-time source dependencies -- deliberately NOT part of",
+      "'reverse_dependencies' (see _notes.generic_iso_hard_deps_not_modeled_here",
+      "above for why conflating the two would be wrong: a hard-Depends",
+      "changing does not mean the DEPENDING package's SOURCE needs to",
+      "rebuild, only that the depended-on package must be present, at a",
+      "resolvable version, wherever the ISO build resolves dependencies from).",
+      "",
+      "How consumed: scripts/image-build/build-dozenos-image resolves every",
+      "package-list entry (data/live-build-config/package-lists/*.list.chroot",
+      "+ each data/build-types/<type>.toml's own `packages` list) against",
+      "whatever apt source(s) it is given -- for a DozenOS-built package that",
+      "is release/make-ephemeral-apt-repo.sh's ephemeral, [trusted=yes],",
+      "file://-only repo assembled from the CI job's freshly built .debs",
+      "(see ISO-BUILD.md item #13); for a stock Debian package, the image's",
+      "normal Debian apt sources. Each entry below documents which side of",
+      "that boundary it falls on and the exact evidence for the pin/Depends.",
+      "package-smoketest.yml / any future ISO-build gate SHOULD assert these",
+      "three resolve (e.g. `apt-get install --dry-run` or an equivalent",
+      "resolvability check against the assembled apt sources) before",
+      "declaring an ISO build green -- not yet wired in as an automated gate",
+      "by this item (out of scope: this item ships the DATA the gate would",
+      "consume, see REBUILD-DISPATCH.md's cross-reference and DEP-GRAPH.md)."
+    ],
+    "dozenos-1x_vpp_set": {
+      "depending_package": "dozenos-1x (source vyos-1x)",
+      "hard_depends": ["libvppinfra", "python3-vpp-api", "vpp", "vpp-crypto-engines", "vpp-dev", "vpp-plugin-core", "vpp-plugin-dpdk"],
+      "evidence": "vyos-1x debian/control (rolling branch, https://raw.githubusercontent.com/vyos/vyos-1x/rolling/debian/control), `Package: vyos-1x` `Depends:` block bracketed by literal comments `# For \"vpp\"` ... `# End \"vpp\"`, listing exactly: libvppinfra, python3-vpp-api, vpp, vpp-crypto-engines, vpp-dev, vpp-plugin-core, vpp-plugin-dpdk.",
+      "consumption": "All seven must be present (built by scripts/package-build/vpp/ and staged into packages/, including the -dev/-crypto-engines/-plugin-* subpackages that RETROSPECTIVE.md §2e records were mistakenly stripped once and had to be restored) for dozenos-1x to install cleanly during live-build chroot assembly. This is an ISO-assembly-time apt-resolve requirement, not a rebuild-fanout edge -- dozenos-1x already rebuilds via the libdozenosconfig0 chain in 'reverse_dependencies' for its own (OCaml build) reasons, unrelated to this list."
+    },
+    "development_smoketest": {
+      "depending_build_type": "development, stream (data/build-types/development.toml, data/build-types/stream.toml)",
+      "hard_depends": ["dozenos-1x-smoketest"],
+      "evidence": "data/build-types/development.toml and data/build-types/stream.toml both list `\"dozenos-1x-smoketest\"` directly in their own `packages = [...]` array (verified on the mode-B reproduced tree).",
+      "consumption": "The development/stream ISO build types apt-install dozenos-1x-smoketest directly from their package list; it must be staged in packages/ (or resolvable from the ephemeral apt repo) whenever a development/stream ISO is built. RETROSPECTIVE.md §2e records this was mistakenly excluded once (as a 'no flavor/test debs' simplification) and had to be reverted once the ISO build proved it required."
+    },
+    "vyatta_cfg_bash_completion_exact_pin": {
+      "depending_package": "vyatta-cfg (source vyatta-cfg)",
+      "hard_depends": ["bash-completion (= 1:2.8-6)"],
+      "evidence": "vyatta-cfg debian/control (rolling branch, https://raw.githubusercontent.com/vyos/vyatta-cfg/rolling/debian/control), `Package: vyatta-cfg` `Depends:` includes literally `bash-completion (= 1:2.8-6),`.",
+      "consumption": "This is an EXACT `=` version pin, the strictest kind: the ephemeral apt repo (or whatever apt source resolves vyatta-cfg's Depends at ISO-assembly time) must carry a bash-completion package whose version is precisely `1:2.8-6` -- not `1:2.8-6+git<anything>`, not Debian bookworm's stock `1:2.11-6`. bash-completion IS rebuilt by DozenOS (scripts/package-build/bash-completion/, cloned from salsa.debian.org at the OLDER commit_id `debian/2.8-6` specifically because current Debian ships a newer version -- see recipe-worklist.md), so its built .deb's version is exactly the risk surface the '+git' auto-stamp (see rename-transform.sh's --stamp/REBRAND_VERSION_STAMP hook) would break if ever applied to this recipe. See DEP-GRAPH.md / RETROSPECTIVE.md §2c and the item #16 fix in rename-transform.sh (EXACT_PIN_STAMP_EXCLUDE guard, rebrand-map.conf) for the full root-cause + fix writeup."
+    }
+  }
+}
