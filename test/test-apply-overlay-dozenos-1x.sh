@@ -131,6 +131,19 @@ class Qos:
         pass
 EOF
   printf '# https://github.com/dozenos/coderabbit/blob/production/.coderabbit.yaml\ninheritance: true\n' > "$t/.coderabbit.yaml"
+
+  # libdozenosconfig/Makefile with opam pins to a specific (fake) upstream sha
+  # -- pin-opam-ocaml-branch.sh must re-pin both to #rolling (the sha does not
+  # exist in the snapshot mirror). Names/hosts are already in dozenos form (as
+  # rename-transform would leave them); only the #<sha> fragment is the fix.
+  mkdir -p "$t/libdozenosconfig"
+  cat > "$t/libdozenosconfig/Makefile" <<'EOF'
+PACKAGES=dozenos1x-config,vyconf.vyconfd-config
+depends:
+	sudo sh -c 'eval $$(opam env --root=/opt/opam --set-root) ;\
+		opam pin add dozenos1x-config https://github.com/dozenos/dozenos1x-config.git#0123456789abcdef0123456789abcdef01234567 -y ; \
+		opam pin add vyconf https://github.com/dozenos/vyconf.git#89abcdef0123456789abcdef0123456789abcdef -y'
+EOF
 }
 
 # ---------------------------------------------------------------------------
@@ -214,6 +227,16 @@ if grep -qF 'github.com/vyos/coderabbit' "$TREE/.coderabbit.yaml" \
   ok ".coderabbit.yaml dangling dozenos/coderabbit ref reverted (REPOINT-AUDIT.md #6)"
 else
   bad ".coderabbit.yaml ref not reverted"; cat "$TREE/.coderabbit.yaml"
+fi
+
+# 7. pin-opam-ocaml-branch.sh: opam pins re-pinned from the (fake) upstream
+#    sha to the #rolling branch (the sha does not exist in the snapshot mirror).
+if grep -qF 'dozenos1x-config.git#rolling' "$TREE/libdozenosconfig/Makefile" \
+   && grep -qF 'vyconf.git#rolling' "$TREE/libdozenosconfig/Makefile" \
+   && ! grep -qE '\.git#[0-9a-f]{7,40}' "$TREE/libdozenosconfig/Makefile"; then
+  ok "opam pins re-pinned to #rolling (no leftover #<sha>)"
+else
+  bad "opam pins not re-pinned to #rolling"; cat "$TREE/libdozenosconfig/Makefile"
 fi
 
 # ---------------------------------------------------------------------------

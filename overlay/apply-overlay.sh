@@ -187,6 +187,7 @@ copy_new_files "$NEW_FILES" "$TARGET"
 echo "== apply-overlay: step 2/3 -- logic-patches/ (both modes) =="
 "$LOGIC_PATCHES/revert-source-mirror-urls.sh" "$TARGET"
 "$LOGIC_PATCHES/vyos-mirror-guard.sh" "$TARGET"
+"$LOGIC_PATCHES/dockerfile-go-path.sh" "$TARGET"
 
 echo "== apply-overlay: step 3/3 -- value-fixes/ =="
 if [ "$MODE" = "local" ]; then
