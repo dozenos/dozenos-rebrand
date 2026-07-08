@@ -100,6 +100,15 @@ jobs:
       actions: read
     outputs:
       build_version: ${{ steps.version.outputs.build_version }}
+    env:
+      # The `secrets` context is NOT usable in a step-level `if:` (GitHub
+      # rejects the whole file with "Unrecognized named-value: 'secrets'"),
+      # and workflow-level `env:` cannot read `secrets` either -- only
+      # job-level env can. Mirror the two MOK secrets here so the
+      # signed-vs-unsigned `if:` guards below test `env.*`. Empty (unset) when
+      # the org secrets are absent -- exactly the unsigned-build case.
+      MOK_SIGNING_KEY: ${{ secrets.MOK_SIGNING_KEY }}
+      MOK_SIGNING_CERT: ${{ secrets.MOK_SIGNING_CERT }}
     steps:
       - name: Checkout dozenos-build
         uses: actions/checkout@v6
@@ -159,10 +168,7 @@ jobs:
       # run at all) when the org secrets are not configured -- identical to
       # today's unsigned-build behavior in that case.
       - name: Inject MOK signing key+cert
-        if: ${{ secrets.MOK_SIGNING_KEY != '' && secrets.MOK_SIGNING_CERT != '' }}
-        env:
-          MOK_SIGNING_KEY: ${{ secrets.MOK_SIGNING_KEY }}
-          MOK_SIGNING_CERT: ${{ secrets.MOK_SIGNING_CERT }}
+        if: ${{ env.MOK_SIGNING_KEY != '' && env.MOK_SIGNING_CERT != '' }}
         run: dozenos-rebrand/release/inject-mok-cert.sh dozenos-build
 
       # Item #13 (../../../ISO-BUILD.md): builds the ephemeral apt repo
@@ -217,7 +223,7 @@ jobs:
       # The runner is destroyed at job end regardless; this is defense in
       # depth, not the only removal -- see SB-SIGNING.md §3/§6.
       - name: Clean up injected MOK key
-        if: ${{ always() && secrets.MOK_SIGNING_KEY != '' && secrets.MOK_SIGNING_CERT != '' }}
+        if: ${{ always() && env.MOK_SIGNING_KEY != '' && env.MOK_SIGNING_CERT != '' }}
         run: dozenos-rebrand/release/inject-mok-cert.sh dozenos-build --cleanup
 
       - uses: actions/upload-artifact@v4

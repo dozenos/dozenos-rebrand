@@ -203,12 +203,19 @@ step calling `release/inject-mok-cert.sh` is added **immediately before**
 the "Build custom ISO image" step, guarded so it is a no-op when the
 secrets are not configured (e.g. a fork, or before the org secrets existed):
 
+The two MOK secrets are mirrored into the **job-level** `env:` (the `secrets`
+context is not usable in a step `if:` — GitHub rejects the file with
+"Unrecognized named-value: 'secrets'" — and a workflow-level `env:` cannot
+read `secrets` either, only a job-level one can), so the guard tests `env.*`:
+
 ```yaml
+# in the job's env: block
+env:
+  MOK_SIGNING_KEY: ${{ secrets.MOK_SIGNING_KEY }}
+  MOK_SIGNING_CERT: ${{ secrets.MOK_SIGNING_CERT }}
+# ...
 - name: Inject MOK signing key+cert
-  if: ${{ secrets.MOK_SIGNING_KEY != '' && secrets.MOK_SIGNING_CERT != '' }}
-  env:
-    MOK_SIGNING_KEY: ${{ secrets.MOK_SIGNING_KEY }}
-    MOK_SIGNING_CERT: ${{ secrets.MOK_SIGNING_CERT }}
+  if: ${{ env.MOK_SIGNING_KEY != '' && env.MOK_SIGNING_CERT != '' }}
   run: dozenos-rebrand/release/inject-mok-cert.sh dozenos-build
 ```
 
@@ -222,7 +229,7 @@ itself already removes its own in-chroot copy, see §3):
 
 ```yaml
 - name: Clean up injected MOK key
-  if: ${{ always() && secrets.MOK_SIGNING_KEY != '' }}
+  if: ${{ always() && env.MOK_SIGNING_KEY != '' && env.MOK_SIGNING_CERT != '' }}
   run: dozenos-rebrand/release/inject-mok-cert.sh dozenos-build --cleanup
 ```
 
@@ -438,7 +445,7 @@ runs — which is exactly where item #10 already calls
 `release/inject-mok-cert.sh`, in `package-smoketest.yml`'s `build_iso` job
 (§6). Since the `.der` derivation was added **inside** `inject-mok-cert.sh`
 itself (not a sibling script), the existing guarded
-`if: secrets.MOK_SIGNING_KEY != '' && secrets.MOK_SIGNING_CERT != ''` step
+`if: env.MOK_SIGNING_KEY != '' && env.MOK_SIGNING_CERT != ''` step
 and its matching `--cleanup` step now produce/remove all three files with
 no workflow YAML change required. Item #13's nightly workflow, once
 authored, inherits this for free by following §6's guidance to reuse the
