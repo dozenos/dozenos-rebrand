@@ -1,0 +1,31 @@
+# KVM/QEMU virtual machine image.
+#
+# Ships BOTH an installable/upgrade ISO and a ready-to-boot qcow2 disk
+# (build-dozenos-image builds the ISO, installs it into an intermediate
+# raw disk, converts to qcow2 with qemu-img; the .raw never appears in
+# manifest.json's artifacts because it is not listed in image_format).
+#
+# The flavor name "kvm" is burned into both artifacts' version data, so
+# `add system image` accepts the ISO as an upgrade on a system installed
+# from the qcow2.
+
+image_format = ["iso", "qcow2"]
+
+# Intermediate raw disk size in GB (raw_image.py), and qcow2 compression
+# for the qemu-img convert step (-c = compressed qcow2).
+disk_size = 4
+image_opts = "-c"
+
+# The QEMU guest agent lets the hypervisor query/quiesce the guest
+# (graceful shutdown, IP reporting, fs-freeze for snapshots).
+# NOTE: top-level keys MUST stay above the [boot_settings] table header,
+# or TOML would parse them as boot_settings.* keys.
+packages = ["qemu-guest-agent"]
+
+# Serial console first: KVM guests are typically managed via the virtual
+# serial port. Spelled out explicitly rather than relying on the
+# image-build defaults, since this is the flavor's defining trait.
+[boot_settings]
+console_type = "ttyS"
+console_num = "0"
+console_speed = "115200"

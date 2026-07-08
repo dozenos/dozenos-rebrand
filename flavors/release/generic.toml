@@ -1,0 +1,11 @@
+# Generic (aka "universal") ISO image.
+#
+# DozenOS build flavors live HERE, in dozenos-rebrand -- NOT in the
+# dozenos-build mirror (its data/build-flavors/ is upstream transform
+# output and stays untouched; see TRANSFORM-COMPLETENESS-AUDIT.md).
+# The nightly workflow points build-dozenos-image at this directory via
+# the DOZENOS_BUILD_FLAVORS_DIR environment variable, and the flavor
+# name burned into each image (checked by "add system image") is this
+# file's basename.
+
+image_format = "iso"
