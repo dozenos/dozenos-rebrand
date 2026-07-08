@@ -111,14 +111,14 @@ jobs:
       MOK_SIGNING_CERT: ${{ secrets.MOK_SIGNING_CERT }}
     steps:
       - name: Checkout dozenos-build
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           path: dozenos-build
 
       # See rebuild-packages.yml's comment: /dozenos-rebrand must be present
       # at that absolute path for pre_build_hook to resolve.
       - name: Checkout dozenos-rebrand
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: dozenos/dozenos-rebrand
           token: ${{ secrets.BUILD_PAT }}
@@ -226,7 +226,7 @@ jobs:
         if: ${{ always() && env.MOK_SIGNING_KEY != '' && env.MOK_SIGNING_CERT != '' }}
         run: dozenos-rebrand/release/inject-mok-cert.sh dozenos-build --cleanup
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           retention-days: 2
           name: dozenos-${{ steps.version.outputs.build_version }}
@@ -240,11 +240,11 @@ jobs:
     timeout-minutes: 90
     steps:
       - name: Checkout dozenos-build
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           path: dozenos-build
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: dozenos-${{ needs.build_iso.outputs.build_version }}
           path: dozenos-build/build

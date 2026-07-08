@@ -47,13 +47,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout this mirror
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       # dozenos-rebrand carries the mirror-push.sh engine + (for overlay
       # mirrors) the per-repo overlay directory this sync re-applies every
       # run -- see SYNC.md's "value-not-string blind spots" note.
       - name: Checkout dozenos-rebrand
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: dozenos/dozenos-rebrand
           ref: @@REBRAND_REF@@

@@ -140,7 +140,7 @@ jobs:
       # resolver + graph, not pre_build_hook, but the checkout is the same
       # one).
       - name: Checkout dozenos-rebrand
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: dozenos/dozenos-rebrand
           token: ${{ secrets.BUILD_PAT }}
@@ -191,7 +191,7 @@ jobs:
         unit: ${{ fromJson(needs.resolve.outputs.matrix) }}
     steps:
       - name: Checkout dozenos-build
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           path: dozenos-build
 
@@ -202,7 +202,7 @@ jobs:
       # push to dozenos-build itself (item #8) or, as here, an incremental
       # dispatch from a dependency mirror (item #15).
       - name: Checkout dozenos-rebrand
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: dozenos/dozenos-rebrand
           token: ${{ secrets.BUILD_PAT }}
@@ -210,7 +210,7 @@ jobs:
 
       - name: Free disk space (large recipes only)
         if: contains(fromJson('["vpp", "linux-kernel"]'), matrix.unit.recipe)
-        uses: jlumbroso/free-disk-space@main
+        uses: jlumbroso/free-disk-space@v1.3.1
         with:
           tool-cache: false
 
@@ -250,7 +250,7 @@ jobs:
           fi
 
       - name: Upload built package(s)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: deb-${{ matrix.unit.recipe }}
           path: dozenos-build/scripts/package-build/${{ matrix.unit.recipe }}/*.deb
