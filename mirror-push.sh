@@ -508,7 +508,19 @@ case "$MODE" in
     log "seed: squashing to a single snapshot commit ..."
     rm -rf "$CLONE_DIR/.git"
     git -C "$CLONE_DIR" init --quiet -b "$BRANCH"
-    git -C "$CLONE_DIR" add -A
+    # -f (force): commit the ENTIRE transformed tree as-is, overriding .gitignore.
+    # Some upstreams force-add source files that also match a .gitignore pattern
+    # meant for build output -- e.g. vyos-1x's root .gitignore has `lib/` (for
+    # generated libs) yet the repo tracks the real source dir libvyosconfig/lib/
+    # (bindings.ml, apply_bindings.ml). A plain `git add -A` re-applies .gitignore
+    # and SILENTLY DROPS those tracked-upstream files, producing an incomplete
+    # mirror (observed: dozenos-1x's libdozenosconfig/lib/ vanished -> the OCaml
+    # bindings.cmx had no source -> the whole package failed to build). The tree
+    # here is derived from a fresh `git clone` (only tracked files, zero build
+    # artifacts) plus intentional overlay files, so force-adding everything
+    # reproduces upstream's tracked set exactly; .gitignore still ships in the
+    # snapshot for downstream build-time use.
+    git -C "$CLONE_DIR" add -A -f
     git -C "$CLONE_DIR" -c user.name="$AUTHOR_NAME" -c user.email="$AUTHOR_EMAIL" \
       commit --quiet --author="$AUTHOR_NAME <$AUTHOR_EMAIL>" -m "$SUBJECT" -m "$BODY"
 
@@ -537,7 +549,10 @@ case "$MODE" in
     rm -rf "$SYNC_DIR"
     git clone --quiet --branch "$BRANCH" "https://github.com/dozenos/$TARGET.git" "$SYNC_DIR"
     sync_tree "$CLONE_DIR" "$SYNC_DIR"
-    git -C "$SYNC_DIR" add -A
+    # -f (force): same reason as the seed path above -- commit the whole tree,
+    # do not let .gitignore silently drop upstream-tracked-but-ignored source
+    # files (e.g. libdozenosconfig/lib/*.ml under vyos-1x's `lib/` ignore rule).
+    git -C "$SYNC_DIR" add -A -f
     if git -C "$SYNC_DIR" diff --cached --quiet; then
       log "no changes vs existing mirror; nothing to sync"
     else
