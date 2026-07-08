@@ -125,6 +125,21 @@ jobs:
           GH_TOKEN: ${{ secrets.BUILD_PAT }}
         run: |
           set -euo pipefail
+          # dozenos-build syncing ITSELF is a build-MACHINERY change (build
+          # scripts, flavors, Dockerfile, image recipe), not a package change:
+          # "dozenos-build" is not a node in dep-graph.json, so dispatching a
+          # dozenos-package-rebuild for it resolves to an empty build-unit set
+          # (rebuild-dispatch.yml's resolve job -> any=false -> build+trigger-iso
+          # skipped) -- a pure no-op. The ISO consequence of a dozenos-build
+          # change is instead handled by the nightly change-gate, whose
+          # fingerprint INCLUDES dozenos-build (see dozenos-nightly-build's
+          # nightly.yml check-changes job). So skip the dispatch here rather
+          # than fire a guaranteed-empty one. Every OTHER mirror still
+          # dispatches normally (its package + dep-graph dependents rebuild).
+          if [ "$REPO_NAME" = "dozenos-build" ]; then
+            echo "I: this mirror IS dozenos-build -- build-machinery change, no package-rebuild dispatch (would resolve to an empty build set). Nightly's change-gate rebuilds the ISO for it."
+            exit 0
+          fi
           gh api repos/dozenos/dozenos-build/dispatches \
             -f event_type="dozenos-package-rebuild" \
             -F "client_payload[package]=$REPO_NAME"
