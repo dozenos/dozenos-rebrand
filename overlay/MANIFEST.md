@@ -14,7 +14,13 @@ spec), **dependency-graph coverage/correctness completed** (item #16,
 the `+git`-stamp/exact-pin fix in `../rename-transform.sh`/
 `../rebrand-map.conf` — none of these are part of this overlay bucket
 either, see the same "Related, NOT part of this overlay" section below;
-full spec `../DEP-GRAPH.md`).
+full spec `../DEP-GRAPH.md`), **build-unit normalization fix landed** (item
+#30, closing the directory-mapping gap item #16 itself flagged
+NEEDS-HUMAN: `rebuild-dispatch.yml`'s build job now builds by real
+buildable UNIT via new `../dep-graph/nodes-to-build-units.sh` +
+`dep-graph.json`'s new `build_units` section, not by raw (sometimes
+non-directory) node name — see `../DEP-GRAPH.md`'s "Flagged, not fixed"
+section and `../REBUILD-DISPATCH.md` §11 for the full writeup).
 `overlay/apply-overlay.sh`
 runs all three buckets below, in order, against a tree that already had
 `rename-transform.sh` and `../wire-prebuild-hooks.sh` applied, in either
@@ -23,18 +29,21 @@ what differs between them (only `pin-helper-scm-urls.sh`, see its row below).
 See `README.md` for the full pipeline position and `apply-overlay.sh`'s own
 header for the exact step order.
 
-## Related, NOT part of this overlay: `dep-graph/` (items #15/#16)
+## Related, NOT part of this overlay: `dep-graph/` (items #15/#16/#30)
 
-`../dep-graph/dep-graph.json`, `../dep-graph/resolve-rebuild-set.sh`, and
-the new `../dep-graph/validate-dep-graph.sh` (item #16) are **toolkit
+`../dep-graph/dep-graph.json`, `../dep-graph/resolve-rebuild-set.sh`,
+`../dep-graph/validate-dep-graph.sh` (item #16), and the new
+`../dep-graph/nodes-to-build-units.sh` (item #30) are **toolkit
 files that live at the `dozenos-rebrand` root**, checked out cross-repo at
 CI time (`overlay/new-files/.github/workflows/rebuild-dispatch.yml`'s own
 "Checkout dozenos-rebrand" step) — never copied into the shipped
 `dozenos-build` tree. Full spec: `../REBUILD-DISPATCH.md` (item #15's
-receiver design) and `../DEP-GRAPH.md` (item #16's coverage/correctness
-completion: full 63/63 node enumeration, new edges with provenance, the
-`iso_hard_deps` section, the `+git`-stamp/exact-pin fix, and the new
-graph-integrity validator). The `+git`-stamp fix itself lives in
+receiver design, §11 for item #30's build-unit fix) and `../DEP-GRAPH.md`
+(item #16's coverage/correctness completion: full node enumeration, new
+edges with provenance, the `iso_hard_deps` section, the `+git`-stamp/exact-pin
+fix, and the graph-integrity validator; its own "Flagged, not fixed"
+section documents the directory-mapping gap item #30 closes). The
+`+git`-stamp fix itself lives in
 `../rename-transform.sh` (its existing, optional `--stamp` hook, item 4 of
 its own pipeline) + a new `EXACT_PIN_STAMP_EXCLUDE` data array in
 `../rebrand-map.conf` — also toolkit-root files, also never shipped into
@@ -258,6 +267,38 @@ tree-coverage check, 2 `+git`-stamp-fix assertions, and shellcheck on the
 new validator). Full `test/*.sh` suite: **219/219** assertions (199
 pre-item-#16 + 20 new). Full spec: `../DEP-GRAPH.md`.
 
+**Item #30 (build-unit normalization fix, `rebuild-dispatch.yml` itself
+EDITED for the first time since item #15):** closes the directory-mapping
+gap item #16 flagged NEEDS-HUMAN (`dep-graph.json`'s own
+`_notes.item16_rebuild_dispatch_directory_mapping_gap`) — several resolved
+node names (`python3-vici`, `libtac2`, `isc-kea-common`, `libyang3`, every
+linux-kernel `--packages` block name) are not `scripts/package-build/`
+directory names, so the old `cd scripts/package-build/${{ matrix.pkg }}`
+would fail for any of them. New `dep-graph.json` top-level `build_units`
+section (a `node_to_unit` map covering every known graph node, verified
+against a freshly reproduced mode-B tree + real `debian/control`
+provenance for the non-obvious deb→recipe cases, plus one explicitly
+flagged unmappable node, `squid` — never a scripts/package-build/ directory,
+pure Debian apt passthrough) + new `dep-graph/nodes-to-build-units.sh`
+(wraps `resolve-rebuild-set.sh`, maps+dedups the resolved closure into real
+build units) replace the old ad-hoc jq linux-kernel-collapsing logic in
+`rebuild-dispatch.yml`'s `resolve` job; the `build` job's matrix is now
+build-UNIT objects (`{"recipe": "<dir>"}` or `{"recipe": "linux-kernel",
+"kernel_blocks": [...]}`), `cd`-ing a real directory in every case and
+running `build.py --packages <blocks>` (kernel itself always included in
+the union — see `nodes-to-build-units.sh`'s own header for why this is a
+correctness requirement, not just an optimization). `resolve-rebuild-set.sh`
+and `validate-dep-graph.sh`'s existing behavior are both kept fully additive
+(the latter gains new build-unit-coverage/shape checks, still opt-in `--tree`
+depth). New `test/test-nodes-to-build-units.sh`: **40/40** assertions
+(tricky node→unit cases with provenance, dedup for both multi-deb-one-recipe
+and multi-kernel-block, the one flagged-unmappable node, unknown-node/identity-fallback
+handling, validator broken-graph fixtures, YAML/actionlint/lands-in-tree/zero-vyos
+on the edited workflow). Full `test/*.sh` suite: **259/259** assertions (219
+pre-item-#30 + 40 new). Full spec: `../REBUILD-DISPATCH.md` §11,
+`../DEP-GRAPH.md`'s "Flagged, not fixed" section (now cross-referencing the
+fix).
+
 ### Decision: `vyos-http-api-tools` stored pre-transformed as `dozenos-http-api-tools`
 
 Unlike its 5 siblings (`vyatta-bash`, `vyatta-biosdevname`, `vyatta-cfg`,
@@ -341,7 +382,7 @@ item #18d, see below) and 2 docker/ external hosts would 404 in `--local`
 |---|---|---|
 | `pin-helper-scm-urls.sh` | Revert `scm_url` back to real `github.com/vyos/*` for 14 blocks across 12 files: `libnss-mapuser`, `libpam-radius-auth`, `shim-signed`, `tacacs` (3 blocks: `libtacplus-map`, `libpam-tacplus`, `libnss-tacplus`), `vpp`'s `vyos-vpp-patches`/`dozenos-vpp-patches` block, `dozenos-1x` (the renamed `vyos-1x` recipe dir) — 8 blocks, all rewritten by `rename-transform.sh` — **plus (item #18d)** the 6 `new-files/` recipes that ship pre-pointed at `github.com/dozenos/*` and bypass the transform entirely: `vyatta-bash`, `vyatta-biosdevname`, `vyatta-cfg`, `ipaddrcheck`, `hvinfo`, `dozenos-http-api-tools` (the one name-changing case: `dozenos/dozenos-http-api-tools.git` ↔ `vyos/vyos-http-api-tools.git`). `vpp`'s `name` field and the sibling block's rsync path are correctly left alone — verified by simulating the transform, both consistently read `dozenos-vpp-patches` and need no revert; only the external fetch URL does. **`--local`-mode only (item #18c)**: `apply-overlay.sh` only runs this script in `--local` mode (pre-mirror/offline); in `--ci` mode (the default, and what `mirror-push.sh --build-repo` uses) it is skipped, leaving all 14 scm_urls at `github.com/dozenos/*` since those mirrors already exist by the time `dozenos-build` is pushed. **Contingent, not permanent**: once ALL 14 mirrors exist (they do, as of item #18d), `--local` itself becomes a narrowing pre-mirror/offline-only mode rather than the steady-state default; delete the script/mode split entirely if `--local` is ever no longer needed. | #11, #18d |
 | `pin-toolchain-apt-source.sh` | Revert 2 real external hosts in `docker/`: `docker/dozenos-dev.list`'s `packages.vyos.net` apt-repo host (item #12), and `docker/Dockerfile`'s `cdn.vyos.io` syft-tool download host (~line 336-337). The second one is a **newly-found gap, not in the original audit** — confirmed the live hand-edited tree has *also* not reverted it (`cdn.vyos.io` still present unreverted there), so this was previously undiscovered, not a duplicate of tracked work. | #12 (+ new finding) |
-| `pin-nonmirrored-org-refs.sh` | Revert 3 files' worth of stray `github.com/dozenos/*` refs that the four-form transform correctly produced (pass `--verify` cleanly — no literal `vyos` survives) but that point at repos with no `dozenos` mirror and no mirror plan: `.coderabbit.yaml`'s org-baseline-config link (real upstream: `vyos/coderabbit`), `AGENTS.md`'s 2-line live-build-fork description (real upstream: `vyos/vyos-live-build`; the *actual* Dockerfile clones live-build from `salsa.debian.org` directly, so this was stale prose either way), and `scripts/ansible-install`'s `ansible-galaxy collection install` command (real upstream: `vyos/vyos.vyos`, an actual published Ansible collection — this is the one target that is genuinely *executable*, not just prose/comment). Found by `REPOINT-AUDIT.md`'s step #6 cross-check (`gh repo view dozenos/<name>` for every `dozenos/*` ref found repo-wide, not just in `scm_url`/opam-pin fields). Both modes, same reasoning as `pin-toolchain-apt-source.sh`. Raises the `--ci`-mode residual count from 5 to 9 (see `mirror-push.sh`'s header and `test/test-mirror-push.sh`). | REPOINT-AUDIT.md #6 (new) |
+| `pin-nonmirrored-org-refs.sh` | Revert 3 files' worth of stray `github.com/dozenos/*` refs that the four-form transform correctly produced (pass `--verify` cleanly — no literal `vyos` survives) but that point at repos with no `dozenos` mirror and no mirror plan: `.coderabbit.yaml`'s org-baseline-config link (real upstream: `vyos/coderabbit`), `AGENTS.md`'s 2-line live-build-fork description (real upstream: `vyos/vyos-live-build`; the *actual* Dockerfile clones live-build from `salsa.debian.org` directly, so this was stale prose either way), and `scripts/ansible-install`'s `ansible-galaxy collection install` command (real upstream: `vyos/vyos.vyos`, an actual published Ansible collection — this is the one target that is genuinely *executable*, not just prose/comment). Found by `REPOINT-AUDIT.md`'s step #6 cross-check (`gh repo view dozenos/<name>` for every `dozenos/*` ref found repo-wide, not just in `scm_url`/opam-pin fields). Both modes, same reasoning as `pin-toolchain-apt-source.sh`. Raises the `--ci`-mode residual count from 5 to 9 (see `mirror-push.sh`'s header and `test/test-mirror-push.sh`). All 9 (plus `overlay-dozenos-1x`'s own `pin-nonmirrored-org-refs.sh` residuals) are now the checked-in source of truth for `mirror-push.sh --allow-residuals`'s bounded allowlist: `overlay/expected-residuals.txt`, enforced by `residuals_allowlisted()` in `mirror-push.sh` — an unmatched residual fails the push closed even under `--allow-residuals`/`--build-repo`. | REPOINT-AUDIT.md #6 (new) |
 | `remove-committed-mok-cert.sh` | Delete `data/certificates/dozenos-prod-2025-linux.pem` (the post-rename path of pristine upstream's real, committed VyOS Secure Boot cert) after a fresh clone + transform. A fresh `git archive HEAD` still ships this real cert (the live working tree already deleted it by hand — see progress item #2/#26 — but a **fresh clone** does not start from that working tree, it starts from pristine `HEAD`, which still has it). Sanity-checks the cert's subject contains "VyOS" via `openssl x509 -subject` before deleting (falls back to a PEM-header check if `openssl` is unavailable) so it never blindly deletes an unrelated file at that path. | #9/#26 |
 | ~~`gen-throwaway-keys.sh`~~ | **Not implemented, and intentionally not part of this overlay** — per `.powerloop/2026-07-07-cicd.note.md` item #18b notes: "Throwaway GPG/minisign keys are NOT in overlay — CI injects real pubkeys from secrets (item 3)." Confirmed correct: this stays a CI-secret-injection concern, not a file the overlay generates or ships. | #10 (explicitly excluded) |
 | ~~`regen-default-credential.sh`~~ | **Not implemented — out of scope for this repo.** The #23 password-hash fix touches `tools/cloud-init/AWS/config.boot.default` and `tools/container/config.boot.default` (arguably vyos-build-scoped) **plus** 5 locations inside the `vyos-1x`/`dozenos-1x` repo (definitely not vyos-build-scoped). Deferred as a whole to avoid a half-fix that regenerates the hash in 2 places while leaving the other 5 (in a different repo) stale/inconsistent; revisit when `dozenos-1x`'s own overlay is built and coordinate a single hash regenerated consistently everywhere. | #8/#23 (deferred) |
@@ -486,6 +527,13 @@ wire-prebuild-hooks.sh <clone>/scripts/package-build -> overlay/apply-overlay.sh
 ```
 
 ## Repro test — PASSED (2026-07-08, item #18d re-run; static only, no network/build)
+
+**Superseded note:** the "(a) `--verify`" residual count below (5) predates
+`pin-nonmirrored-org-refs.sh` (REPOINT-AUDIT.md #6, added later this same
+day) — see the `value-fixes/` table above and `SWEEP-dozenos-build.md`'s own
+reconciliation note. The current, correct `--ci`-mode count is **9**,
+tracked in `overlay/expected-residuals.txt`. This section's other assertions
+((b)–(e), idempotency, the bug-fix writeup) are unaffected and still accurate.
 
 ```
 git -C vyos-build archive HEAD | tar -x -C <scratch>/repro   # 318 files, pristine upstream

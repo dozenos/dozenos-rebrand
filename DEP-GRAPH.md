@@ -118,7 +118,7 @@ already-tested closure for no correctness gain — they are redundant, not
 wrong) but are now clarified in `_notes` with the real
 `debian/control` evidence, rather than left as an unexplained oddity.
 
-### Flagged, not fixed: `rebuild-dispatch.yml`'s directory-mapping gap
+### Flagged, not fixed by item #16 — CLOSED by item #30
 
 Investigating these edges surfaced a real, pre-existing correctness gap in
 the **already-landed item #15** `rebuild-dispatch.yml`: its build job does
@@ -129,12 +129,25 @@ names — `python3-vici`, `libtac2`, `libtacplus-map1`,
 `isc-kea-common`/`isc-kea-dhcp4`/`isc-kea-dhcp6`/`isc-kea-dhcp-ddns`/`isc-kea-hooks`,
 `libyang3` — so if any of these is ever the sole new entry in a resolved
 matrix (e.g. resolving `strongswan` includes `python3-vici`), that `cd`
-would fail. This is **out of this item's scope** (editing
-`rebuild-dispatch.yml` itself, an already-landed #15 file, is not one of
-this item's deliverables) and is recorded as
+would fail. This was **out of item #16's scope** (editing
+`rebuild-dispatch.yml` itself, an already-landed #15 file, was not one of
+item #16's deliverables) and was recorded as
 `_notes.item16_rebuild_dispatch_directory_mapping_gap` in
-`dep-graph.json` with two concrete remediation options for whoever picks
+`dep-graph.json` with two concrete remediation options for whoever picked
 it up next.
+
+**Item #30 picked it up and closed it**: new `dep-graph.json` top-level
+`build_units` section (a `node_to_unit` map, every node → its real
+`{recipe, kernel_block}`, derived from a freshly reproduced mode-B tree +
+real `debian/control`/`package.toml` provenance, one node — `squid` —
+explicitly flagged unmappable rather than invented) + new
+`dep-graph/nodes-to-build-units.sh` (wraps `resolve-rebuild-set.sh`,
+maps+dedups the resolved closure into build units) + `rebuild-dispatch.yml`
+itself edited to build by unit. Full write-up, worked examples, the
+`squid`/"63→62 units" reconciliation, and the sender-reconciliation
+decision: `REBUILD-DISPATCH.md` §11. `resolve-rebuild-set.sh` and this
+document's own edge list / `iso_hard_deps` are all unaffected — item #30
+is purely additive on top of item #16's completed coverage.
 
 ## 3. ISO hard deps (`iso_hard_deps`, a section separate from `reverse_dependencies`)
 

@@ -69,6 +69,19 @@ jobs:
             exit 1
           fi
 
+      # `github.event.repository.name` is UNSET on a `schedule` trigger (that
+      # webhook payload carries no `repository` object at all -- only
+      # `workflow_dispatch` and other repo-scoped events populate it), so it
+      # can never be used here: this workflow's PRIMARY trigger is `schedule`
+      # (see the `on:` block above), and `workflow_dispatch` would silently
+      # mask the breakage in manual testing. `GITHUB_REPOSITORY` (runner env
+      # var, form `owner/repo`) IS always populated regardless of trigger, so
+      # derive the bare repo name from that instead, once, and reuse it below.
+      - name: Resolve mirror repo name
+        run: |
+          set -euo pipefail
+          echo "REPO_NAME=${GITHUB_REPOSITORY##*/}" >> "$GITHUB_ENV"
+
       # Lets mirror-push.sh's own plain `git clone/push https://github.com/...`
       # calls authenticate as this job (contents:write on the GITHUB_TOKEN
       # above), without mirror-push.sh needing any GitHub-auth logic of its
@@ -93,7 +106,7 @@ jobs:
           MIRROR_PUSH_FLAGS="@@MIRROR_PUSH_FLAGS@@"
           # shellcheck disable=SC2086
           dozenos-rebrand/mirror-push.sh "$UPSTREAM_URL" \
-            --target "${{ github.event.repository.name }}" \
+            --target "$REPO_NAME" \
             --branch @@BRANCH@@ $MIRROR_PUSH_FLAGS \
             2>&1 | tee "$out_file"
           if grep -qF 'no changes vs existing mirror; nothing to sync' "$out_file"; then
@@ -114,4 +127,4 @@ jobs:
           set -euo pipefail
           gh api repos/dozenos/dozenos-build/dispatches \
             -f event_type="dozenos-package-rebuild" \
-            -F "client_payload[package]=${{ github.event.repository.name }}"
+            -F "client_payload[package]=$REPO_NAME"

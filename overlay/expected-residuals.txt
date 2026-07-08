@@ -1,0 +1,57 @@
+# expected-residuals.txt -- allowlist of DELIBERATE `vyos` residuals that
+# mirror-push.sh's --allow-residuals path (step 6, residuals_allowlisted())
+# is permitted to pass through rename-transform.sh --verify.
+#
+# --allow-residuals no longer blanket-allows ANY verify failure: every
+# residual line --verify reports must match an entry here, or mirror-push.sh
+# dies (fail-closed) EVEN with --allow-residuals/--build-repo set. This is
+# the toolkit's control against a future upstream commit silently
+# introducing a genuine new `vyos` leak into the highest-churn automated
+# target (dozenos-build, whose --build-repo push always implies
+# --allow-residuals).
+#
+# This file legitimately contains `vyos` tokens -- it is toolkit CONFIG (an
+# allowlist of deliberate vyos pointers), never shipped mirror content, so it
+# does not violate the zero-vyos-shipped-artifact rule.
+#
+# Format (one entry per line; '#' comments and blank lines ignored):
+#
+#   <repo-relative-path>|<literal-content-token>|<reason>
+#
+# A residual `<abs-path>/<file>:<line>:<content>` line from --verify is
+# allowlisted only if BOTH:
+#   (a) <file> equals <repo-relative-path> EXACTLY (path match, not a glob)
+#   (b) <content> contains <literal-content-token> as a substring
+# matched by CONTENT, never by line number -- this file survives upstream
+# line-number drift (a future upstream edit that moves these lines around
+# does not require updating this file). reason is always exactly one of:
+#   source-mirror     -- reverted 3rd-party binary/firmware tarball fetch
+#   toolchain-apt      -- reverted apt-source host for the dev-container image
+#   cdn-syft            -- reverted syft SBOM-tool download host
+#   nonmirrored-org-ref -- reverted github.com/vyos/* ref to a repo with no
+#                          dozenos org mirror and no mirror plan
+#
+# Full rationale for each entry: SWEEP-dozenos-build.md's classification
+# table, overlay/MANIFEST.md ("Repro test" + the pin-*.sh rows), and each
+# revert script's own header comment.
+
+# --- dozenos-build (mirror-push.sh --build-repo) -- 8 entries, 9 residual
+#     lines (AGENTS.md contributes 2 lines matched by 1 entry). Reverted by
+#     overlay/logic-patches/revert-source-mirror-urls.sh,
+#     overlay/value-fixes/pin-toolchain-apt-source.sh, and
+#     overlay/value-fixes/pin-nonmirrored-org-refs.sh. ------------------------
+scripts/package-build/linux-kernel/build-realtek-r8152.py|packages.vyos.net/source-mirror|source-mirror
+scripts/package-build/linux-kernel/build-realtek-r8126.py|packages.vyos.net/source-mirror|source-mirror
+scripts/package-build/linux-kernel/build-intel-qat.sh|packages.vyos.net/source-mirror|source-mirror
+docker/Dockerfile|cdn.vyos.io|cdn-syft
+docker/dozenos-dev.list|packages.vyos.net|toolchain-apt
+.coderabbit.yaml|github.com/vyos/coderabbit|nonmirrored-org-ref
+AGENTS.md|vyos/vyos-live-build|nonmirrored-org-ref
+scripts/ansible-install|github.com/vyos/vyos.vyos|nonmirrored-org-ref
+
+# --- dozenos-1x (mirror-push.sh --overlay overlay-dozenos-1x
+#     --allow-residuals) -- 1 additional entry (its .coderabbit.yaml is
+#     identical content to vyos-build's, covered by the entry above).
+#     Reverted by
+#     overlay-dozenos-1x/value-fixes/pin-nonmirrored-org-refs.sh. -----------
+python/dozenos/qos/base.py|github.com/vyos/vyatta-cfg-qos|nonmirrored-org-ref

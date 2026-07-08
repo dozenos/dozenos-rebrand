@@ -80,15 +80,23 @@ this toolkit's `dozenos-rebrand/*` scripts exist to prevent. Instead:
 ## 3. Byte-stability / idempotency / strip-survival
 
 - **Idempotent, byte-stable per (flags) tuple:** the target repo's own name
-  never appears as literal text in the generated file — it is only ever the
-  runtime `${{ github.event.repository.name }}` expression, baked once into
-  the template itself. So two different targets with the *same* flags (e.g.
-  two plain mirrors) produce a byte-identical `sync.yml`, and the *same*
-  target re-synced twice in a row with unchanged flags produces the
-  byte-identical file both times — a re-sync never touches this file's
-  content unless the flags or the template itself changed. This is stronger
-  than "stable for a given (target, flags)" — it's stable across all targets
-  sharing the same flags.
+  never appears as literal text in the generated file — it is only ever
+  derived at CI runtime from the always-populated `GITHUB_REPOSITORY` runner
+  env var (`${GITHUB_REPOSITORY##*/}`, computed once in a "Resolve mirror
+  repo name" step and reused via `$GITHUB_ENV`), baked once into the template
+  itself. So two different targets with the *same* flags (e.g. two plain
+  mirrors) produce a byte-identical `sync.yml`, and the *same* target
+  re-synced twice in a row with unchanged flags produces the byte-identical
+  file both times — a re-sync never touches this file's content unless the
+  flags or the template itself changed. This is stronger than "stable for a
+  given (target, flags)" — it's stable across all targets sharing the same
+  flags.
+  **NOT** `${{ github.event.repository.name }}` — that field is part of the
+  webhook event payload and is unset on this workflow's `schedule` trigger
+  (the primary, unattended path this workflow exists for; only
+  `workflow_dispatch` populates it, which previously masked the bug in manual
+  testing). `GITHUB_REPOSITORY` (form `owner/repo`) is a top-level runner env
+  var, always populated regardless of trigger.
 - **Strip-survival is structural, not a preservation trick:** step 3 (`rm -rf
   <clone>/.github`) only ever runs against the freshly cloned **upstream**
   tree, at the very start of the pipeline. `generate_sync_workflow()` runs

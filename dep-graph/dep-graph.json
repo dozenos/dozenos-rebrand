@@ -50,7 +50,9 @@
     "vpp's normal 'what does vpp need built first' forward build-order view).",
     "Package identifiers are the same strings the item #14 sync.yml dispatch",
     "sends as client_payload.package -- i.e. the dozenos/* mirror repo name",
-    "(== github.event.repository.name of whichever mirror just self-synced).",
+    "(derived at CI runtime from GITHUB_REPOSITORY, the always-populated",
+    "runner env var -- see SYNC.md section 3 -- of whichever mirror just",
+    "self-synced).",
     "Where a mirror repo produces multiple named .deb outputs from one",
     "source (e.g. strongswan also emits libstrongswan/libcharon-*), the graph",
     "node is the mirror/recipe name, not each individual .deb.",
@@ -267,6 +269,475 @@
       "hard_depends": ["bash-completion (= 1:2.8-6)"],
       "evidence": "vyatta-cfg debian/control (rolling branch, https://raw.githubusercontent.com/vyos/vyatta-cfg/rolling/debian/control), `Package: vyatta-cfg` `Depends:` includes literally `bash-completion (= 1:2.8-6),`.",
       "consumption": "This is an EXACT `=` version pin, the strictest kind: the ephemeral apt repo (or whatever apt source resolves vyatta-cfg's Depends at ISO-assembly time) must carry a bash-completion package whose version is precisely `1:2.8-6` -- not `1:2.8-6+git<anything>`, not Debian bookworm's stock `1:2.11-6`. bash-completion IS rebuilt by DozenOS (scripts/package-build/bash-completion/, cloned from salsa.debian.org at the OLDER commit_id `debian/2.8-6` specifically because current Debian ships a newer version -- see recipe-worklist.md), so its built .deb's version is exactly the risk surface the '+git' auto-stamp (see rename-transform.sh's --stamp/REBRAND_VERSION_STAMP hook) would break if ever applied to this recipe. See DEP-GRAPH.md / RETROSPECTIVE.md §2c and the item #16 fix in rename-transform.sh (EXACT_PIN_STAMP_EXCLUDE guard, rebrand-map.conf) for the full root-cause + fix writeup."
+    }
+  },
+
+  "build_units":
+  {
+    "_comment": [
+      "Item #30: NORMALIZED node -> buildable-UNIT map, fixing the real defect",
+      "DEP-GRAPH.md/dep-graph.json's own '_notes.item16_rebuild_dispatch_directory_mapping_gap'",
+      "flagged (item #16) and left NEEDS-HUMAN: rebuild-dispatch.yml's build job did",
+      "`cd scripts/package-build/${{ matrix.pkg }}` for every resolved node name, but",
+      "several graph node identifiers are NOT scripts/package-build/ directory names",
+      "(deb names like python3-vici/libtac2/isc-kea-common/libyang3, and",
+      "linux-kernel `--packages` BLOCK names like i40e/mlnx/realtek-r8126). A bare",
+      "`cd scripts/package-build/python3-vici` fails -- no such directory.",
+      "",
+      "This section maps EVERY node this graph's reverse_dependencies mentions (as a",
+      "key or a dependents-array value -- see dep-graph/validate-dep-graph.sh's new",
+      "'build-unit coverage' check, which asserts this map has no gaps) to its real",
+      "buildable unit: either { recipe: <scripts/package-build subdir>, kernel_block:",
+      "null } for a generic C2 recipe, or { recipe: 'linux-kernel', kernel_block:",
+      "<block-name> } for one of linux-kernel's own bespoke package.toml",
+      "`[[packages]]` blocks (build.py --packages <block-name>, confirmed by reading",
+      "linux-kernel/build.py's own arg_parser + filter). dep-graph/nodes-to-build-units.sh",
+      "consumes this map to turn a resolved node closure into a DEDUPED build-unit",
+      "matrix (multiple deb-name nodes from one recipe collapse to ONE build; every",
+      "resolved kernel-family node collapses to ONE linux-kernel build with the union",
+      "of --packages, see that script's own header for why 'linux-kernel' itself is",
+      "always included in that union even when not literally in the closure).",
+      "",
+      "Derivation method (NOT guessed): reproduced the mode-B dozenos-build tree fresh",
+      "via `mirror-push.sh <local vyos-build checkout> --target dozenos-build",
+      "--branch rolling --build-repo --dry-run` (nothing pushed), enumerated every",
+      "real scripts/package-build/*/ directory name (47, see 'recipe_dirs' below,",
+      "verified again with validate-dep-graph.sh --tree) and every",
+      "linux-kernel/package.toml `[[packages]]` block `name =` field (16, see",
+      "'kernel_blocks' below), then read each multi-block recipe's package.toml AND,",
+      "for deb-name nodes, the real upstream debian/control (or, for python3-vici,",
+      "strongswan's own build-vici.sh invocation) to prove which recipe directory",
+      "actually emits that binary/block -- see 'provenance' below for the non-obvious",
+      "ones. Nothing here was invented: 'unmappable' below lists the one node",
+      "(squid) this pass could NOT find a scripts/package-build/ directory for.",
+      "",
+      "RECONCILIATION vs item #16's own claim: DEP-GRAPH.md/dep-graph.json's",
+      "'_notes.coverage' says 'find scripts/package-build -name package.toml -> 48",
+      "recipe directories' and a final '63/63' node count (47 non-linux-kernel + 16",
+      "linux-kernel blocks). Re-deriving this fresh (this item) finds only 47 TOTAL",
+      "directories (46 non-linux-kernel + the linux-kernel directory itself) on both",
+      "the freshly reproduced mode-B tree AND the local vyos-build sibling checkout",
+      "-- there is no scripts/package-build/squid directory on either (squid is",
+      "pure Debian apt passthrough, see build/cache/packages.chroot/squid_*.deb in",
+      "the local vyos-build checkout; it is never rebuilt locally and has no",
+      "dozenos/* mirror). item #16's '48'/'63' counts appear to have miscounted",
+      "'squid' as a 48th recipe directory that does not actually exist. The",
+      "corrected total is 46 non-kernel recipes + 16 kernel blocks = 62 real",
+      "buildable units (see 'recipe_dirs'/'kernel_blocks' counts below); 'squid'",
+      "itself is now explicitly flagged in 'unmappable' rather than silently",
+      "assumed buildable. This does not change any existing edge/closure -- squid",
+      "was, and remains, a leaf with zero dependents either way."
+    ],
+    "recipe_dirs": [
+      "amazon-cloudwatch-agent",
+      "amazon-ssm-agent",
+      "aws-gwlbtun",
+      "bash-completion",
+      "blackbox_exporter",
+      "ddclient",
+      "dozenos-1x",
+      "dozenos-http-api-tools",
+      "dropbear",
+      "ethtool",
+      "frr",
+      "frr_exporter",
+      "hostap",
+      "hsflowd",
+      "hvinfo",
+      "ipaddrcheck",
+      "isc-dhcp",
+      "isc-kea",
+      "keepalived",
+      "libhtp",
+      "libnss-mapuser",
+      "libpam-radius-auth",
+      "linux-kernel",
+      "ndppd",
+      "net-snmp",
+      "netfilter",
+      "node_exporter",
+      "openssl",
+      "openvpn-otp",
+      "owamp",
+      "podman",
+      "pyhumps",
+      "radvd",
+      "shim-signed",
+      "strongswan",
+      "tacacs",
+      "telegraf",
+      "udp-broadcast-relay",
+      "unionfs-fuse",
+      "vpp",
+      "vyatta-bash",
+      "vyatta-biosdevname",
+      "vyatta-cfg",
+      "waagent",
+      "wide-dhcpv6",
+      "xen-guest-agent",
+      "zerotier-one"
+    ],
+    "kernel_blocks": [
+      "linux-kernel",
+      "linux-firmware",
+      "accel-ppp-ng",
+      "nat-rtsp",
+      "qat",
+      "igb",
+      "ixgbe",
+      "ixgbevf",
+      "i40e",
+      "ice",
+      "iavf",
+      "jool",
+      "mlnx",
+      "realtek-r8126",
+      "realtek-r8152",
+      "ipt-netflow"
+    ],
+    "node_to_unit": {
+      "accel-ppp-ng": {
+        "recipe": "linux-kernel",
+        "kernel_block": "accel-ppp-ng"
+      },
+      "amazon-cloudwatch-agent": {
+        "recipe": "amazon-cloudwatch-agent",
+        "kernel_block": null
+      },
+      "amazon-ssm-agent": {
+        "recipe": "amazon-ssm-agent",
+        "kernel_block": null
+      },
+      "aws-gwlbtun": {
+        "recipe": "aws-gwlbtun",
+        "kernel_block": null
+      },
+      "bash-completion": {
+        "recipe": "bash-completion",
+        "kernel_block": null
+      },
+      "blackbox_exporter": {
+        "recipe": "blackbox_exporter",
+        "kernel_block": null
+      },
+      "ddclient": {
+        "recipe": "ddclient",
+        "kernel_block": null
+      },
+      "dozenos-1x": {
+        "recipe": "dozenos-1x",
+        "kernel_block": null
+      },
+      "dozenos-http-api-tools": {
+        "recipe": "dozenos-http-api-tools",
+        "kernel_block": null
+      },
+      "dozenos-vpp-patches": {
+        "recipe": "vpp",
+        "kernel_block": null
+      },
+      "dozenos1x-config": {
+        "recipe": "dozenos-1x",
+        "kernel_block": null
+      },
+      "dropbear": {
+        "recipe": "dropbear",
+        "kernel_block": null
+      },
+      "ethtool": {
+        "recipe": "ethtool",
+        "kernel_block": null
+      },
+      "frr": {
+        "recipe": "frr",
+        "kernel_block": null
+      },
+      "frr_exporter": {
+        "recipe": "frr_exporter",
+        "kernel_block": null
+      },
+      "hostap": {
+        "recipe": "hostap",
+        "kernel_block": null
+      },
+      "hsflowd": {
+        "recipe": "hsflowd",
+        "kernel_block": null
+      },
+      "hvinfo": {
+        "recipe": "hvinfo",
+        "kernel_block": null
+      },
+      "i40e": {
+        "recipe": "linux-kernel",
+        "kernel_block": "i40e"
+      },
+      "iavf": {
+        "recipe": "linux-kernel",
+        "kernel_block": "iavf"
+      },
+      "ice": {
+        "recipe": "linux-kernel",
+        "kernel_block": "ice"
+      },
+      "igb": {
+        "recipe": "linux-kernel",
+        "kernel_block": "igb"
+      },
+      "ipaddrcheck": {
+        "recipe": "ipaddrcheck",
+        "kernel_block": null
+      },
+      "ipt-netflow": {
+        "recipe": "linux-kernel",
+        "kernel_block": "ipt-netflow"
+      },
+      "isc-dhcp": {
+        "recipe": "isc-dhcp",
+        "kernel_block": null
+      },
+      "isc-kea": {
+        "recipe": "isc-kea",
+        "kernel_block": null
+      },
+      "isc-kea-common": {
+        "recipe": "isc-kea",
+        "kernel_block": null
+      },
+      "isc-kea-dhcp-ddns": {
+        "recipe": "isc-kea",
+        "kernel_block": null
+      },
+      "isc-kea-dhcp4": {
+        "recipe": "isc-kea",
+        "kernel_block": null
+      },
+      "isc-kea-dhcp6": {
+        "recipe": "isc-kea",
+        "kernel_block": null
+      },
+      "isc-kea-hooks": {
+        "recipe": "isc-kea",
+        "kernel_block": null
+      },
+      "ixgbe": {
+        "recipe": "linux-kernel",
+        "kernel_block": "ixgbe"
+      },
+      "ixgbevf": {
+        "recipe": "linux-kernel",
+        "kernel_block": "ixgbevf"
+      },
+      "jool": {
+        "recipe": "linux-kernel",
+        "kernel_block": "jool"
+      },
+      "keepalived": {
+        "recipe": "keepalived",
+        "kernel_block": null
+      },
+      "libdozenosconfig0": {
+        "recipe": "dozenos-1x",
+        "kernel_block": null
+      },
+      "libhtp": {
+        "recipe": "libhtp",
+        "kernel_block": null
+      },
+      "libnss-mapuser": {
+        "recipe": "libnss-mapuser",
+        "kernel_block": null
+      },
+      "libnss-tacplus": {
+        "recipe": "tacacs",
+        "kernel_block": null
+      },
+      "libpam-radius-auth": {
+        "recipe": "libpam-radius-auth",
+        "kernel_block": null
+      },
+      "libpam-tacplus": {
+        "recipe": "tacacs",
+        "kernel_block": null
+      },
+      "libtac2": {
+        "recipe": "tacacs",
+        "kernel_block": null
+      },
+      "libtacplus-map": {
+        "recipe": "tacacs",
+        "kernel_block": null
+      },
+      "libtacplus-map1": {
+        "recipe": "tacacs",
+        "kernel_block": null
+      },
+      "libyang": {
+        "recipe": "frr",
+        "kernel_block": null
+      },
+      "libyang3": {
+        "recipe": "frr",
+        "kernel_block": null
+      },
+      "linux-firmware": {
+        "recipe": "linux-kernel",
+        "kernel_block": "linux-firmware"
+      },
+      "linux-kernel": {
+        "recipe": "linux-kernel",
+        "kernel_block": "linux-kernel"
+      },
+      "mlnx": {
+        "recipe": "linux-kernel",
+        "kernel_block": "mlnx"
+      },
+      "nat-rtsp": {
+        "recipe": "linux-kernel",
+        "kernel_block": "nat-rtsp"
+      },
+      "ndppd": {
+        "recipe": "ndppd",
+        "kernel_block": null
+      },
+      "net-snmp": {
+        "recipe": "net-snmp",
+        "kernel_block": null
+      },
+      "netfilter": {
+        "recipe": "netfilter",
+        "kernel_block": null
+      },
+      "node_exporter": {
+        "recipe": "node_exporter",
+        "kernel_block": null
+      },
+      "openssl": {
+        "recipe": "openssl",
+        "kernel_block": null
+      },
+      "openvpn-otp": {
+        "recipe": "openvpn-otp",
+        "kernel_block": null
+      },
+      "owamp": {
+        "recipe": "owamp",
+        "kernel_block": null
+      },
+      "pkg-libnftnl": {
+        "recipe": "netfilter",
+        "kernel_block": null
+      },
+      "pkg-nftables": {
+        "recipe": "netfilter",
+        "kernel_block": null
+      },
+      "podman": {
+        "recipe": "podman",
+        "kernel_block": null
+      },
+      "pyhumps": {
+        "recipe": "pyhumps",
+        "kernel_block": null
+      },
+      "python3-vici": {
+        "recipe": "strongswan",
+        "kernel_block": null
+      },
+      "qat": {
+        "recipe": "linux-kernel",
+        "kernel_block": "qat"
+      },
+      "radvd": {
+        "recipe": "radvd",
+        "kernel_block": null
+      },
+      "realtek-r8126": {
+        "recipe": "linux-kernel",
+        "kernel_block": "realtek-r8126"
+      },
+      "realtek-r8152": {
+        "recipe": "linux-kernel",
+        "kernel_block": "realtek-r8152"
+      },
+      "shim-signed": {
+        "recipe": "shim-signed",
+        "kernel_block": null
+      },
+      "strongswan": {
+        "recipe": "strongswan",
+        "kernel_block": null
+      },
+      "tacacs": {
+        "recipe": "tacacs",
+        "kernel_block": null
+      },
+      "telegraf": {
+        "recipe": "telegraf",
+        "kernel_block": null
+      },
+      "udp-broadcast-relay": {
+        "recipe": "udp-broadcast-relay",
+        "kernel_block": null
+      },
+      "unionfs-fuse": {
+        "recipe": "unionfs-fuse",
+        "kernel_block": null
+      },
+      "vpp": {
+        "recipe": "vpp",
+        "kernel_block": null
+      },
+      "vyatta-bash": {
+        "recipe": "vyatta-bash",
+        "kernel_block": null
+      },
+      "vyatta-biosdevname": {
+        "recipe": "vyatta-biosdevname",
+        "kernel_block": null
+      },
+      "vyatta-cfg": {
+        "recipe": "vyatta-cfg",
+        "kernel_block": null
+      },
+      "vyconf": {
+        "recipe": "dozenos-1x",
+        "kernel_block": null
+      },
+      "waagent": {
+        "recipe": "waagent",
+        "kernel_block": null
+      },
+      "wide-dhcpv6": {
+        "recipe": "wide-dhcpv6",
+        "kernel_block": null
+      },
+      "wpa": {
+        "recipe": "hostap",
+        "kernel_block": null
+      },
+      "xen-guest-agent": {
+        "recipe": "xen-guest-agent",
+        "kernel_block": null
+      },
+      "zerotier-one": {
+        "recipe": "zerotier-one",
+        "kernel_block": null
+      }
+    },
+    "unmappable": {
+      "squid": "No scripts/package-build/squid directory exists on the reproduced mode-B tree (mirror-push.sh <local vyos-build> --target dozenos-build --build-repo --dry-run) nor the local vyos-build sibling checkout -- confirmed via `find scripts/package-build -maxdepth 1 -type d` (47 dirs total, squid absent) and via the local checkout's own build/cache/packages.chroot/squid_5.7-2+deb12u5_amd64.deb (a plain Debian-apt-cached .deb, never produced by a local recipe build). squid is genuinely never rebuilt by DozenOS and has no dozenos/* mirror, so 'squid' should never actually appear as a real client_payload.package in practice; kept as a graph leaf (zero dependents, unchanged) but explicitly flagged here rather than assigned an invented recipe. dep-graph/nodes-to-build-units.sh treats any node found here (or any node with no entry in 'node_to_unit' and no matching real recipe/kernel-block by identity) as UNMAPPABLE: it is dropped from the emitted build-unit matrix with a warning on stderr, never crashes, and never invents a `cd` target."
+    },
+    "provenance": {
+      "python3-vici": "strongswan/package.toml's ONLY [[packages]] block is 'strongswan' itself -- there is no separate python3-vici recipe directory or block. Its build_cmd runs `dpkg-buildpackage ...; cd ..; ./build-vici.sh` (confirmed by reading scripts/package-build/strongswan/package.toml on the reproduced tree) -- build-vici.sh is strongswan's OWN sibling script, invoked from inside the strongswan recipe's build_cmd, and produces the python3-vici binary package. Build unit: recipe 'strongswan'.",
+      "libtac2 / libtacplus-map1 (deb names) + libtacplus-map / libpam-tacplus / libnss-tacplus (package.toml block names)": "scripts/package-build/tacacs/package.toml declares exactly 3 [[packages]] blocks: libtacplus-map, libpam-tacplus, libnss-tacplus (confirmed by reading that file on the reproduced tree) -- there is no separate scripts/package-build/libtac2 or .../libtacplus-map1 directory; those are BINARY package (.deb) names, not directories. libtac2 is produced by the libpam-tacplus block's own debian/control (`Package: libtac2`, see dep-graph.json's pre-existing '_notes.item16_tacacs_block_names' for the exact upstream debian/control quotes already verified by item #16). Build unit for all 5 identifiers: recipe 'tacacs' (the generic build.py has no --packages filter, so all 3 blocks always build together as one 'tacacs' unit -- this is also why multiple tacacs-family nodes in one resolved closure correctly DEDUP to a single build in nodes-to-build-units.sh).",
+      "isc-kea-common / isc-kea-dhcp4 / isc-kea-dhcp6 / isc-kea-dhcp-ddns / isc-kea-hooks (deb names)": "scripts/package-build/isc-kea/package.toml declares exactly ONE [[packages]] block, name='isc-kea' (confirmed by reading that file on the reproduced tree) -- these 5 are ALL binary .deb names produced by that single source build (isc-kea-dhcp4's real debian/control: `Depends: isc-kea-common (= ${binary:Version}), ...`, already verified by item #16's own '_notes.item16_isc_kea_same_source_note'). Build unit for all 5 (and the bare 'isc-kea' node): recipe 'isc-kea'.",
+      "libyang3 (deb name) / libyang (package.toml block name)": "scripts/package-build/frr/package.toml declares 2 [[packages]] blocks: libyang, frr (confirmed by reading that file on the reproduced tree). libyang3 is the shipped .deb name of the 'libyang' block's output (item #16's own '_notes.item16_libyang_frr' already cites FRRouting/frr's real debian/control Build-Depends on libyang-dev). Build unit for libyang3/libyang/frr: recipe 'frr' (single recipe, no --packages filter, both blocks always build together).",
+      "wpa / hostap (package.toml block names)": "scripts/package-build/hostap/package.toml declares 2 [[packages]] blocks: wpa, hostap (confirmed by reading that file on the reproduced tree; item #16's '_notes.item16_wpa_hostap' already cites hostap/build.sh's `cp -a wpa/debian hostap` step). Build unit for wpa/hostap: recipe 'hostap'.",
+      "pkg-libnftnl / pkg-nftables (package.toml block names)": "scripts/package-build/netfilter/package.toml declares 2 [[packages]] blocks: pkg-libnftnl, pkg-nftables (confirmed by reading that file on the reproduced tree; item #16's '_notes.item16_pkg_libnftnl_pkg_nftables' already cites pkg-nftables's build_cmd installing the freshly built libnftnl .deb first). Build unit for pkg-libnftnl/pkg-nftables/netfilter: recipe 'netfilter'.",
+      "dozenos-vpp-patches (package.toml block name, and a REAL dozenos/* mirror repo)": "scripts/package-build/vpp/package.toml declares 2 [[packages]] blocks: dozenos-vpp-patches, vpp (confirmed by reading that file on the reproduced tree). dozenos-vpp-patches's own build_cmd is `/bin/true` (a no-op fetch-only block) -- the vpp block's pre_build_hook rsyncs dozenos-vpp-patches' own cloned tree in and git-am's every patch during the SAME 'vpp' recipe invocation. Build unit for dozenos-vpp-patches/vpp: recipe 'vpp' (one build produces both).",
+      "vyconf / dozenos1x-config / libdozenosconfig0": "NONE of these three have a scripts/package-build/ directory of their own -- they are OCaml libraries opam-pinned FROM WITHIN the dozenos-1x (upstream vyos-1x) source tree's own libdozenosconfig/Makefile (`opam pin add dozenos1x-config https://github.com/dozenos/dozenos1x-config.git#<sha>`, `opam pin add vyconf https://github.com/dozenos/vyconf.git#<sha>` -- confirmed in REPOINT-AUDIT.md's own audit of that exact Makefile), built as part of the SAME dozenos-1x recipe invocation (libdozenosconfig0 is the resulting .so/.deb dozenos-1x's own debian/control ships, per LANDMINES.md's soname note). Build unit for vyconf/dozenos1x-config/libdozenosconfig0: recipe 'dozenos-1x' (there is no separate build step -- a vyconf or dozenos1x-config mirror change requires re-running the dozenos-1x recipe so its opam pin re-fetches the changed ref).",
+      "accel-ppp-ng (linux-kernel block, NOT scripts/package-build/accel-ppp-ng)": "accel-ppp-ng has TWO upstream triggers (vpp and linux-kernel, see dep-graph.json's pre-existing '_notes.accel-ppp-ng') but only ONE real build location: linux-kernel/package.toml's own 'accel-ppp-ng' block (build_cmd 'build_accel_ppp_ng', confirmed by reading linux-kernel/build.py). There is no scripts/package-build/accel-ppp-ng/ directory. Build unit: { recipe: 'linux-kernel', kernel_block: 'accel-ppp-ng' } regardless of which of its two triggers fired."
     }
   }
 }

@@ -51,6 +51,11 @@ RENAME_TRANSFORM="$SCRIPT_DIR/rename-transform.sh"
 WIRE_HOOKS="$SCRIPT_DIR/wire-prebuild-hooks.sh"
 APPLY_OVERLAY="$SCRIPT_DIR/overlay/apply-overlay.sh"
 SYNC_TEMPLATE="$SCRIPT_DIR/sync.yml.template"
+# Checked-in allowlist of DELIBERATE vyos residuals --allow-residuals may
+# pass through --verify (see residuals_allowlisted() below and that file's
+# own header for the format/rationale). This bounds --allow-residuals to a
+# known set instead of blanket-allowing any verify failure.
+EXPECTED_RESIDUALS="$SCRIPT_DIR/overlay/expected-residuals.txt"
 
 # ref of dozenos/dozenos-rebrand the generated sync.yml pins its own
 # "Checkout dozenos-rebrand" step to (item #14, see SYNC.md). Overridable via
@@ -130,6 +135,19 @@ done
 # --allow-residuals is still honored (and still required) for every mirror
 # run that does NOT pass --build-repo -- that fail-closed default is
 # unchanged for ordinary (non-build-repo) per-package mirrors.
+#
+# --allow-residuals does NOT blanket-allow -- it is bounded by the checked-in
+# allowlist (EXPECTED_RESIDUALS / overlay/expected-residuals.txt, enforced by
+# residuals_allowlisted() at step 6). Every residual line --verify reports
+# must match an allowlist entry (same file + a content-substring match) or
+# mirror-push.sh dies (fail-closed) even with --allow-residuals/--build-repo
+# set. This was a real gap: the previous implementation only checked
+# --verify's boolean exit code, so ANY residual -- including a brand-new
+# genuine vyos leak introduced by a future upstream commit -- was logged as
+# "known build-time pointers" and pushed anyway, nightly, with no alert, for
+# dozenos-build (the highest-churn repo, --build-repo always implies
+# --allow-residuals). An unmatched residual is now treated as a candidate
+# genuine leak and refused.
 if [ "$BUILD_REPO" -eq 1 ]; then
   ALLOW_RESIDUALS=1
 fi
@@ -146,7 +164,8 @@ if [ "$BUILD_REPO" -eq 1 ]; then
   [ -x "$WIRE_HOOKS" ]    || die "missing dependency: $WIRE_HOOKS"
   [ -x "$APPLY_OVERLAY" ] || die "missing dependency: $APPLY_OVERLAY"
 fi
-[ -f "$SYNC_TEMPLATE" ] || die "missing dependency: $SYNC_TEMPLATE"
+[ -f "$SYNC_TEMPLATE" ]      || die "missing dependency: $SYNC_TEMPLATE"
+[ -f "$EXPECTED_RESIDUALS" ] || die "missing dependency: $EXPECTED_RESIDUALS"
 
 # ------------------------------------------------------------------------- #
 # sync.yml generation (item #14) -- every target gets its own
@@ -195,10 +214,11 @@ portable_overlay_path() {
 # baked -- it stays a caller-supplied secret at CI time, see SYNC.md).
 # Byte-stable: for a given (BRANCH, BUILD_REPO, OVERLAY_DIR, ALLOW_RESIDUALS)
 # tuple the output is identical on every call -- the target name never
-# appears as literal text, only as the runtime
-# `${{ github.event.repository.name }}` expression baked into the template
-# itself, so two different targets sharing the same flags produce
-# byte-identical files.
+# appears as literal text, only derived at CI runtime from the always-
+# populated `GITHUB_REPOSITORY` runner env var (`${GITHUB_REPOSITORY##*/}`,
+# NOT the `github.event.repository.name` expression -- that field is unset on
+# a `schedule` trigger, this workflow's primary/unattended path), so two
+# different targets sharing the same flags produce byte-identical files.
 generate_sync_workflow() {
   local clone_dir="$1"
   local flags="" flags_display
@@ -297,7 +317,7 @@ if [ "$BUILD_REPO" -eq 1 ]; then
   # .coderabbit.yaml ref, 2 AGENTS.md lines, and scripts/ansible-install)
   # -- 9 total. Neither the 14 git scm_urls nor the 6 new-files/ ones are
   # residual vyos in --ci mode any more.
-  log "NOTE: apply-overlay.sh --ci leaves mirrored git scm_urls at dozenos/*; residuals expected are only the 9 non-git-host/non-mirrored-org build-time pointers (--build-repo implies --allow-residuals)"
+  log "NOTE: apply-overlay.sh --ci leaves mirrored git scm_urls at dozenos/*; residuals expected are only the 9 non-git-host/non-mirrored-org build-time pointers in $EXPECTED_RESIDUALS (--build-repo implies --allow-residuals, bounded by that allowlist)"
   "$APPLY_OVERLAY" --ci "$CLONE_DIR"
 else
   log "4/7 --build-repo not set, skipping wire-prebuild-hooks/apply-overlay"
@@ -309,8 +329,20 @@ if [ -n "$OVERLAY_DIR" ]; then
     "$OVERLAY_DIR/apply-overlay.sh" "$CLONE_DIR"
   else
     # Plain file overlay: copy the overlay tree on top, preserving structure.
+    # EXCLUDE anything under .github/ -- this generic --overlay mechanism is
+    # for per-repo value-fix content only (see WORKFLOW-POLICY.md's "Where
+    # DozenOS's own workflows come from"); the only sanctioned sources of
+    # .github/workflows/* content are overlay/new-files/ (via --build-repo)
+    # and this script's own generate_sync_workflow(). A plain --overlay dir
+    # must never be able to smuggle .github/ content past step 3's strip.
     ( cd "$OVERLAY_DIR" && find . -mindepth 1 \( -type f -o -type l \) -print0 ) \
       | while IFS= read -r -d '' rel; do
+          case "$rel" in
+            ./.github/*|./.github)
+              log "WARNING: --overlay '$OVERLAY_DIR' contains '$rel' under .github/ -- skipping it (a plain --overlay may never add .github/ content; use overlay/new-files/ via --build-repo instead)"
+              continue
+              ;;
+          esac
           mkdir -p "$CLONE_DIR/$(dirname "$rel")"
           cp -a "$OVERLAY_DIR/$rel" "$CLONE_DIR/$rel"
         done
@@ -332,15 +364,72 @@ log "5/7 generating .github/workflows/sync.yml ..."
 generate_sync_workflow "$CLONE_DIR"
 
 # ------------------------------------------------------------------------- #
-# 6) Verify -- must be 0 residual vyos, unless --allow-residuals.
+# 6) Verify -- must be 0 residual vyos, unless --allow-residuals AND every
+#    residual matches the checked-in allowlist (EXPECTED_RESIDUALS /
+#    overlay/expected-residuals.txt). --allow-residuals does NOT
+#    blanket-allow: an unmatched residual -- a candidate GENUINE vyos leak,
+#    e.g. one introduced by a future upstream commit -- still fails closed
+#    here even under --build-repo (which forces --allow-residuals on for
+#    every automated dozenos-build sync, the highest-churn repo).
 # ------------------------------------------------------------------------- #
+
+# residuals_allowlisted <verify-output-file> <clone-dir> -- reads the
+# residual `<abs-path>:<line>:<content>` listing rename-transform.sh --verify
+# wrote (FAIL case, see that script's `verify()`/`--verify` handling) and
+# checks EVERY residual line against EXPECTED_RESIDUALS. A residual line only
+# passes if its file (relative to <clone-dir>) exactly matches some
+# allowlist entry's path AND the line's content contains that entry's token
+# substring -- matched by CONTENT, never by line number, so the allowlist
+# survives upstream line-number drift. Prints every entry as it goes
+# (allowlisted or UNEXPECTED) so the classification is visible in CI logs.
+# Returns success (0) only if every residual line matched some entry;
+# non-zero (with at least one "UNEXPECTED" line already logged) otherwise.
+residuals_allowlisted() {
+  local verify_out="$1" clone_dir="$2"
+  local line rel al_file al_token al_reason matched unexpected=0
+
+  while IFS= read -r line; do
+    case "$line" in
+      'verify: FAIL'*|'') continue ;;
+    esac
+    rel="${line#"$clone_dir"/}"
+    rel="${rel%%:*}"
+    matched=0
+    while IFS='|' read -r al_file al_token al_reason; do
+      case "$al_file" in
+        ''|'#'*) continue ;;
+      esac
+      if [ "$rel" = "$al_file" ] && printf '%s\n' "$line" | grep -qF -- "$al_token"; then
+        matched=1
+        break
+      fi
+    done < "$EXPECTED_RESIDUALS"
+    if [ "$matched" -eq 1 ]; then
+      log "  allowlisted ($al_reason): $line"
+    else
+      log "  UNEXPECTED (not in $EXPECTED_RESIDUALS): $line"
+      unexpected=$((unexpected + 1))
+    fi
+  done < "$verify_out"
+
+  [ "$unexpected" -eq 0 ]
+}
+
 log "6/7 verify ..."
-if ! "$RENAME_TRANSFORM" "$CLONE_DIR" --verify; then
-  if [ "$ALLOW_RESIDUALS" -eq 1 ]; then
-    log "residual vyos found, but --allow-residuals set -- continuing (known build-time pointers)"
+VERIFY_OUT="$WORK/verify-output.txt"
+if "$RENAME_TRANSFORM" "$CLONE_DIR" --verify >"$VERIFY_OUT" 2>&1; then
+  cat "$VERIFY_OUT" >&2
+elif [ "$ALLOW_RESIDUALS" -eq 1 ]; then
+  cat "$VERIFY_OUT" >&2
+  log "residual vyos found -- checking each residual against the allowlist ($EXPECTED_RESIDUALS) ..."
+  if residuals_allowlisted "$VERIFY_OUT" "$CLONE_DIR"; then
+    log "residual vyos found, but --allow-residuals set and every residual matches the allowlist -- continuing (known build-time pointers)"
   else
-    die "verify failed with residual vyos and --allow-residuals not set (see FAIL listing above); refusing to push"
+    die "residual vyos found that is NOT in the allowlist ($EXPECTED_RESIDUALS) -- refusing to push even with --allow-residuals set (see UNEXPECTED line(s) above); this is either a genuine new vyos leak introduced upstream or a legitimate new deliberate pointer that needs an allowlist entry"
   fi
+else
+  cat "$VERIFY_OUT" >&2
+  die "verify failed with residual vyos and --allow-residuals not set (see FAIL listing above); refusing to push"
 fi
 
 # ------------------------------------------------------------------------- #

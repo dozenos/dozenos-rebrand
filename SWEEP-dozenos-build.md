@@ -1,5 +1,23 @@
 # SWEEP-dozenos-build.md — Whole-repo acceptance gate (item #5 / #22)
 
+**Correction / reconciliation note (post-#22 cycle):** this sweep's
+classification table below covers only the 5 non-git binary/apt-host
+build-time pointers (the `revert-source-mirror-urls.sh` x3 +
+`pin-toolchain-apt-source.sh` x2 reverts). It predates
+`overlay/value-fixes/pin-nonmirrored-org-refs.sh` (REPOINT-AUDIT.md #6),
+which reverts 4 more residual lines (`.coderabbit.yaml`, 2 lines in
+`AGENTS.md`, `scripts/ansible-install`) that are equally deliberate but were
+never added to this table. **The current, correct, re-verified `--ci`-mode
+residual count for `dozenos-build` is 9, not 5** — see `overlay/MANIFEST.md`
+(its "Repro test" section carries the same correction) and
+`mirror-push.sh`'s own header comment. This sweep's "5 hits, 0 GENUINE"
+verdict below is still accurate as far as it goes (those 5 are genuinely
+build-time-pointer, not leaks) — it is simply incomplete, missing the 4
+`nonmirrored-org-ref` items. The full 9-item set is now the checked-in
+source of truth for `mirror-push.sh --allow-residuals`'s allowlist:
+`overlay/expected-residuals.txt` (enforced by `residuals_allowlisted()` in
+`mirror-push.sh`), which cross-references this file's classification.
+
 Full case-insensitive `vyos` sweep over the mode-B transformed `dozenos-build`
 tree (the exact tree `mirror-push.sh --build-repo` produces and pushes), plus
 a cross-check against the live `github.com/dozenos/dozenos-build` mirror.
@@ -65,6 +83,10 @@ irrelevant to shipped-file-content zero-`vyos`):
 | `docker/dozenos-dev.list:1` | `https://packages.vyos.net/repositories/rolling` | build-time-pointer | Toolchain apt-source host for the dev-container build image (filename itself IS renamed to `dozenos-dev.list` — only the URL content is reverted). DozenOS ships as a whole-image upgrade model with no apt-tracked distro, so self-hosting this apt repo is out of scope. Reverted by `pin-toolchain-apt-source.sh`. |
 
 **Totals: 5 hits, 0 GENUINE, 5 build-time-pointer, 0 upstream-3rd-party**
+(scope of THIS table only — see the reconciliation note at the top of this
+file: `pin-nonmirrored-org-refs.sh`'s 4 additional residual lines raise the
+actual current `--ci`-mode total to 9, tracked in
+`overlay/expected-residuals.txt`, not in this table)
 (the 5 build-time-pointer hits are themselves references to genuine 3rd-party
 upstream hosts — `packages.vyos.net`/`cdn.vyos.io` — but are bucketed as
 "build-time-pointer" per the task's own framing, since they are the
@@ -174,6 +196,11 @@ verified-passing state the sweep just exercised):
 | **Total** | **102 passed, 0 failed** |
 
 ## Final verdict
+
+*(See the reconciliation note at the top of this file: the "5" below is this
+sweep's own non-git binary/apt-host scope only. The current, correct,
+`--ci`-mode total including `pin-nonmirrored-org-refs.sh`'s residuals is 9 —
+still zero genuine leaks, tracked in `overlay/expected-residuals.txt`.)*
 
 **PASS** — zero genuine `vyos` brand leaks in the mode-B `dozenos-build`
 tree. The only residual `vyos` hits (5) are the known, documented, deliberate

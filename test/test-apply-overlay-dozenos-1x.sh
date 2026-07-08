@@ -27,6 +27,11 @@
 #   7. value-fixes/pin-vyatta-cfg-qos-doc-ref.sh (REPOINT-AUDIT.md #6 finding):
 #      the dangling github.com/dozenos/vyatta-cfg-qos doc-comment ref is
 #      reverted to the real, existing (archived) github.com/vyos/vyatta-cfg-qos.
+#   8. Fail-closed on upstream hash drift: if a known file carries a
+#      DIFFERENT hash than the hardcoded OLD_HASH literal (upstream
+#      re-salted/reformatted it) that does NOT authenticate `dozenos`, the
+#      overlay must fail loudly instead of silently no-op'ing, even when the
+#      other known files still match OLD_HASH and get patched normally.
 #
 # NOTE: no `set -e` -- this runner tallies pass/fail itself.
 set -uo pipefail
@@ -232,6 +237,68 @@ if printf '%s' "$OUT2" | grep -qi 'already fixed'; then
   ok "second run reports the no-op state"
 else
   bad "second run did not report a no-op state"; printf '%s\n' "$OUT2"
+fi
+
+# ---------------------------------------------------------------------------
+# Run 2.5: fail-closed on upstream hash drift.
+#
+# The confirmed defect this guards against: the replace loop's ONLY trigger
+# is a literal grep for the hardcoded OLD_HASH string. If upstream ever
+# ships a DIFFERENT hash in a known file -- e.g. a re-salted/reformatted
+# hash that still authenticates the OLD plaintext `vyos` -- the literal grep
+# simply does not see it, so (pre-fix) the script silently treated that file
+# as "nothing to do" and exited 0, shipping a stale/wrong password hash.
+# Seed ONE known file with such a drifted hash (a real, validly-formed
+# `$6$` hash -- NOT the hardcoded OLD_HASH literal -- that still
+# authenticates `vyos`) while leaving the other 4 known files carrying the
+# real OLD_HASH, so the replace loop still has (partial) work to do and
+# would, pre-fix, patch the other 4 and silently leave the drifted one
+# untouched. Assert the overlay now fails closed (non-zero exit) instead.
+# ---------------------------------------------------------------------------
+echo "== apply-overlay-dozenos-1x: fail-closed on upstream hash drift =="
+DRIFT_TREE="$WORK/drift-tree"
+make_fixture "$DRIFT_TREE"
+
+# A validly-formed SHA-512 crypt hash that is NOT the hardcoded OLD_HASH
+# literal, and that still authenticates the OLD plaintext 'vyos' -- the
+# realistic "upstream re-salted/reformatted the same old password" drift
+# case regen-default-password-hash.sh's literal-string match cannot see.
+DRIFTED_VYOS_HASH=$(openssl passwd -6 -salt driftedsalt1 vyos)
+python3 - "$DRIFT_TREE/data/config.boot.default" "$OLD_HASH" "$DRIFTED_VYOS_HASH" <<'PY'
+import sys
+path, old, new = sys.argv[1:4]
+with open(path, "r", encoding="utf-8") as fh:
+    data = fh.read()
+data = data.replace(old, new)
+with open(path, "w", encoding="utf-8") as fh:
+    fh.write(data)
+PY
+
+if OUT_DRIFT=$("$SCRIPT" "$DRIFT_TREE" 2>&1); then
+  bad "drifted hash: expected non-zero exit (fail-closed), got 0"
+  printf '%s\n' "$OUT_DRIFT"
+else
+  ok "drifted hash: exits non-zero (fail-closed) instead of a silent no-op"
+fi
+if printf '%s' "$OUT_DRIFT" | grep -qi 'drift'; then
+  ok "drifted hash: failure message identifies upstream hash drift"
+else
+  bad "drifted hash: failure message does not mention drift"; printf '%s\n' "$OUT_DRIFT"
+fi
+if printf '%s' "$OUT_DRIFT" | grep -qF 'data/config.boot.default'; then
+  ok "drifted hash: failure message names the offending file"
+else
+  bad "drifted hash: failure message does not name the offending file"; printf '%s\n' "$OUT_DRIFT"
+fi
+
+# The other 4 known files (still carrying the real OLD_HASH) must NOT have
+# been silently patched-and-declared-done while the drifted file was
+# ignored -- i.e. the self-check must run (and fail) regardless of the
+# replace loop's partial progress on the rest of the tree.
+if grep -qF "$DRIFTED_VYOS_HASH" "$DRIFT_TREE/data/config.boot.default"; then
+  ok "drifted hash: offending file's drifted hash is still visible for post-mortem (script did not silently overwrite then pass)"
+else
+  bad "drifted hash: offending file was modified despite the run failing"
 fi
 
 # ---------------------------------------------------------------------------

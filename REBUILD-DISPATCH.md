@@ -89,14 +89,21 @@ selects a *changed* package to resolve through the dependency graph first) —
 different name (`package`, not `package_name`) deliberately marks that
 distinction.
 
-## 4. Dependency graph — bootstrap (item #15), coverage/correctness completed (item #16)
+## 4. Dependency graph — bootstrap (item #15), coverage/correctness completed (item #16), build-unit normalization fixed (item #30)
 
 **Item #16 status: coverage COMPLETE.** Full write-up, per-edge
 provenance, the new `iso_hard_deps` section, the `+git`-stamp/exact-pin
 fix, and the graph-integrity validator: **`DEP-GRAPH.md`**. The summary
 below is retained for continuity but is no longer the authoritative
-coverage claim — see `DEP-GRAPH.md` §1 for the exact 63/63 node
-accounting.
+coverage claim — see `DEP-GRAPH.md` §1 for the exact node accounting (and
+its own reconciliation note on a 1-node overcount item #30 found and
+corrected, §11 below).
+
+**Item #30 status: `rebuild-dispatch.yml`'s directory-mapping gap (flagged
+by item #16, see `DEP-GRAPH.md`'s "Flagged, not fixed" section) is FIXED.**
+Every node below (and every other node in the graph) is now normalized to
+a real buildable unit via `dep-graph.json`'s new `build_units` section +
+`dep-graph/nodes-to-build-units.sh` — see §11.
 
 `dep-graph/dep-graph.json` encodes the reverse-dependency edges already
 known from the local-build powerloop (`memory/dozenos-build-dependency-graph.md`):
@@ -171,6 +178,9 @@ a fix in `rename-transform.sh`/`rebrand-map.conf` — see `DEP-GRAPH.md` §5.
 
 ## 5. `linux-kernel` family collapsing (why the build job special-cases it)
 
+**Updated by item #30 — see §11 for the full rewrite; this section now
+describes the CURRENT mechanism.**
+
 `rebuild-packages.yml` (item #8) already excludes `linux-kernel` from its
 generic per-directory build path, for the same underlying reason this
 document restates: `linux-kernel/build.py` is bespoke, not the generic
@@ -179,21 +189,27 @@ share one working directory with a genuine build-order dependency (the
 kernel must build before any OOT module reads its output — see that
 script's own `linux_kernel_tarball` handoff between blocks). Because of
 this, job A never lets more than one `linux-kernel`-family matrix entry
-exist: if the resolved rebuild set contains `linux-kernel` and/or any of its
-known dependents, job A collapses all of them into a single `"linux-kernel"`
-matrix entry (computed via a small `jq` set-difference against
-`dep-graph.json`'s own `reverse_dependencies["linux-kernel"]` list — not a
-second, hand-maintained copy of that list, so it cannot drift). Job B's
-build step branches on `matrix.pkg == 'linux-kernel'`: that branch runs
-`python3 build.py` with **no** `--packages` filter (builds every block,
-kernel first, in `package.toml` order — exactly what "rebuild the kernel and
-everything ABI-coupled to it" means); every other matrix entry uses the
-ordinary `cd scripts/package-build/<pkg> && python3 ../build.py` path,
-identical to `rebuild-packages.yml`. Both branches run inside the same
-`ghcr.io/dozenos/dozenos-build:rolling` container with the same neutral
-`/dozenos` mount and `/dozenos-rebrand` checkout — see `MLNX-AND-DWARF.md`
-#25 for why the neutral mount matters for kernel/OOT builds specifically
-(DWARF `comp_dir` debranding).
+exist: `dep-graph/nodes-to-build-units.sh` (item #30) maps the resolved
+rebuild set to real build units and collapses every kernel-family node
+(`linux-kernel` itself and/or any of its known dependents) into a single
+`{"recipe": "linux-kernel", "kernel_blocks": [...]}` unit — the
+`kernel_blocks` list is the sorted, deduped union of every resolved block
+PLUS `linux-kernel` itself, always (see §11 for why that inclusion is a
+correctness requirement, not optional). Job B's build step branches on
+`matrix.unit.recipe == 'linux-kernel'`: that branch now runs `python3
+build.py --packages <the union, space-joined>` — **narrower** than item
+#15's original "no `--packages` filter, rebuild every block
+unconditionally" (a lone `accel-ppp-ng` change no longer also rebuilds
+every unrelated Intel NIC driver), while still always rebuilding the kernel
+itself first (`build.py`'s own filter preserves `package.toml`'s
+declaration order, and `linux-kernel` is declared first). Every other
+matrix entry uses the ordinary
+`cd scripts/package-build/<matrix.unit.recipe> && python3 ../build.py`
+path, identical to `rebuild-packages.yml`. Both branches run inside the
+same `ghcr.io/dozenos/dozenos-build:rolling` container with the same
+neutral `/dozenos` mount and `/dozenos-rebrand` checkout — see
+`MLNX-AND-DWARF.md` #25 for why the neutral mount matters for kernel/OOT
+builds specifically (DWARF `comp_dir` debranding).
 
 ## 6. Job C — which ISO-trigger mechanism, and why
 
@@ -382,6 +398,183 @@ names being cited as provenance, e.g. `vyos/libpam-tacplus`,
 No secret was introduced or handled; `CI-SECRETS.md` needed no changes.
 
 **Nothing pushed, no key handled, coverage is COMPLETE** (not partial) —
-see `DEP-GRAPH.md` §1 for the 63/63 accounting and §2's one flagged
-remainder (the `rebuild-dispatch.yml` directory-mapping gap, explicitly
-out of this item's scope).
+see `DEP-GRAPH.md` §1 for the node accounting and §2's flagged remainder
+(the `rebuild-dispatch.yml` directory-mapping gap, explicitly out of item
+#16's own scope — closed by item #30, below).
+
+## 11. Item #30: build-unit normalization fix (`rebuild-dispatch.yml` directory-mapping gap, CLOSED)
+
+### The defect
+
+Item #16 flagged, but explicitly did not fix (out of its own stated
+scope), a real correctness gap in the already-landed item #15
+`rebuild-dispatch.yml`: its build job did a literal
+`cd scripts/package-build/${{ matrix.pkg }}` for every resolved node name.
+Several dep-graph.json node identifiers are **not**
+`scripts/package-build/` directory names:
+
+- **deb names**: `python3-vici` (emitted by the `strongswan` recipe's
+  `build-vici.sh`), `libtac2`/`libtacplus-map1` (emitted by the `tacacs`
+  recipe's `libpam-tacplus`/`libtacplus-map` blocks), `isc-kea-common`
+  and its 4 siblings (all emitted by the single `isc-kea` recipe),
+  `libyang3` (emitted by the `frr` recipe's `libyang` block).
+- **linux-kernel `--packages` block names**: `i40e`, `mlnx`,
+  `realtek-r8126`, `accel-ppp-ng`, etc. — built by the bespoke
+  `linux-kernel` recipe's own `build.py --packages <block>`, not a
+  directory of their own.
+- **OCaml opam-pin aliases with no recipe directory at all**: `vyconf`,
+  `dozenos1x-config`, `libdozenosconfig0` — built as part of the
+  `dozenos-1x` recipe's own build (they are opam-pinned FROM WITHIN that
+  recipe's `libdozenosconfig/Makefile`, confirmed in `REPOINT-AUDIT.md`'s
+  own audit of that file), never their own recipe directory.
+
+`cd scripts/package-build/python3-vici` (or any of the above) would fail
+with no such directory.
+
+### The fix
+
+**Reproduced the mode-B tree fresh** (`mirror-push.sh <local vyos-build
+checkout> --target dozenos-build --branch rolling --build-repo --dry-run`,
+nothing pushed) to authoritatively enumerate every real
+`scripts/package-build/*/` directory (47 total, one of which is
+`linux-kernel` itself) and every `linux-kernel/package.toml`
+`[[packages]]` block name (16), then read every multi-block recipe's
+`package.toml` plus, for deb-name nodes, the real upstream
+`debian/control` (or the exact build-script invocation for
+`python3-vici`/`vyconf`/etc.) to prove which recipe directory actually
+produces each node.
+
+**New `dep-graph.json` top-level `build_units` section**: a `node_to_unit`
+map covering every node ever mentioned in `reverse_dependencies` (a key or
+a dependents-array value), each mapping to `{"recipe":
+"<scripts/package-build subdir>", "kernel_block": "<block name or
+null>"}`, plus `recipe_dirs`/`kernel_blocks` reference lists, a
+`provenance` object citing the exact `package.toml`/`debian/control`
+evidence for every non-obvious mapping, and an `unmappable` object for the
+one node this pass could **not** find a real directory for: `squid`
+(confirmed absent from both the reproduced tree and the local
+`vyos-build` sibling checkout — it is pure Debian apt passthrough,
+`build/cache/packages.chroot/squid_*.deb`, never rebuilt locally, no
+`dozenos/*` mirror; item #16's own "48 recipe directories"/"63 total node"
+counts appear to have miscounted it as a 48th directory that does not
+actually exist — the corrected total is 47 directories / 62 real buildable
+units, reconciled in `dep-graph.json`'s own `build_units._comment`). Kept
+strictly additive — `reverse_dependencies`, `_notes`, and `iso_hard_deps`
+are all unchanged.
+
+**New `dep-graph/nodes-to-build-units.sh`**: wraps
+`resolve-rebuild-set.sh` (calls it verbatim, does not re-implement its BFS
+— `resolve-rebuild-set.sh` itself is byte-unchanged, again), maps every
+node in the resolved closure to its build unit via `build_units`, and
+DEDUPS: multiple nodes mapping to the same recipe collapse to one
+`{"recipe": "<name>"}` unit; every resolved linux-kernel-family node
+collapses to one `{"recipe": "linux-kernel", "kernel_blocks": [...]}`
+unit whose `kernel_blocks` is the sorted, deduped union of every resolved
+block **plus `linux-kernel` itself, always** — `linux-kernel/build-kernel.sh`
+writes the `kernel-vars` file (`KERNEL_DIR=...`) every OOT driver script
+requires (`build-intel-nic.sh` aborts with "KERNEL_DIR not defined" if it
+is missing), so filtering the kernel block itself out of `--packages`
+would build nothing but a hard failure — this is a correctness fix, not
+just deduplication. A node with no `build_units` entry falls back to an
+identity match against `recipe_dirs`/`kernel_blocks` (tolerates a new
+recipe added upstream after `dep-graph.json` was last regenerated,
+matching `resolve-rebuild-set.sh`'s own "unknown package" tolerance) and,
+failing that, is dropped from the emitted matrix with a warning on
+stderr — never a hard failure, never an invented `cd` target.
+
+**`rebuild-dispatch.yml` itself edited** (the first edit since item #15
+landed it): the `resolve` job now runs `nodes-to-build-units.sh` instead
+of `resolve-rebuild-set.sh` + ad-hoc jq linux-kernel-collapsing; the
+`build` job's matrix is build-unit objects (`matrix.unit`), `cd`s
+`scripts/package-build/${{ matrix.unit.recipe }}` (always a real
+directory) and, for the `linux-kernel` unit, runs `python3 build.py
+--packages <the union>` instead of the old no-filter full rebuild (see §5
+above for the updated mechanism). `client_payload.package` (the raw
+`dozenos/*` mirror repo name) is normalized through the exact same map
+"for free": `nodes-to-build-units.sh`'s own resolved closure always
+includes the queried package itself, so a mirror name like
+`dozenos-vpp-patches` or `libtacplus-map` reaches its real build unit
+(`vpp`, `tacacs`) with no separate normalization step. Artifact naming
+(`deb-${{ matrix.unit.recipe }}`, upload path
+`scripts/package-build/${{ matrix.unit.recipe }}/*.deb`) is also fixed as
+a side effect — it used to be keyed on the raw (sometimes non-directory)
+node name.
+
+### Sender reconciliation: decided, NO CHANGE to `sync.yml.template`
+
+Considered whether `sync.yml.template`'s dispatch step should send an
+additional payload field (e.g. the recipe name alongside the mirror repo
+name) so the receiver would not need to normalize at all. **Decision:
+no — keep the receiver-side map authoritative, sender stays simple.**
+Every `client_payload.package` value `sync.yml.template` can ever send
+(the bare mirror repo name, derived at CI runtime from the always-populated
+`GITHUB_REPOSITORY` runner env var — see `SYNC.md` §3 — i.e. one of the 17
+real `dozenos/*` mirror repo names) is already a node in `dep-graph.json` —
+mirror repo
+names ARE graph nodes by construction (`REBUILD-DISPATCH.md` §2's own
+"reconciliation performed" note: item #14 already sends exactly what item
+#15's resolver expects). Pushing recipe-awareness into the sender would
+mean every one of the 17 mirrors' generated `sync.yml` would need to know
+its OWN recipe mapping — duplicating `build_units.node_to_unit` in 17
+places instead of one, and reintroducing exactly the "hand-maintained
+copy that can drift" problem `SYNC.md`/`REBUILD-DISPATCH.md` §5 already
+avoid for the linux-kernel family. The receiver already has the one true
+map (`dep-graph.json`, checked out fresh on every dispatch); normalizing
+there, once, is strictly simpler and cannot drift out of sync with 17
+independent sender copies. `sync.yml.template`'s byte-stability guarantee
+(`SYNC.md` §3) is therefore preserved untouched by this item.
+
+### Verification performed this cycle
+
+- Reproduced the mode-B tree fresh via `mirror-push.sh <local vyos-build>
+  --target dozenos-build --branch rolling --build-repo --dry-run` —
+  same 9 pre-existing residual `vyos` hits as items #15/#16 (no new
+  residual), nothing pushed, no repo created/touched. `rebuild-dispatch.yml`
+  lands byte-identical to the overlay source in the reproduced tree.
+- `jq empty dep-graph/dep-graph.json` — still valid JSON after the
+  `build_units` addition.
+- `dep-graph/validate-dep-graph.sh` (both plain and `--tree`) — clean,
+  now also reporting "N build-unit(s) mapped + M flagged unmappable";
+  confirmed the new build-unit checks actually catch 3 synthetic broken
+  fixtures (a coverage gap, a malformed `node_to_unit` entry, a
+  `node_to_unit.recipe` pointing at a non-real directory under `--tree`).
+- `dep-graph/nodes-to-build-units.sh` — representative outputs:
+  ```
+  $ nodes-to-build-units.sh python3-vici
+  [{"recipe":"strongswan"}]
+  $ nodes-to-build-units.sh libtac2        # tacacs family, deb name
+  [{"recipe":"tacacs"}]
+  $ nodes-to-build-units.sh libpam-tacplus # DEDUP: 2 nodes -> 1 unit
+  [{"recipe":"tacacs"}]
+  $ nodes-to-build-units.sh isc-kea-common # DEDUP: 5 nodes -> 1 unit
+  [{"recipe":"isc-kea"}]
+  $ nodes-to-build-units.sh i40e
+  [{"recipe":"linux-kernel","kernel_blocks":["i40e","linux-kernel"]}]
+  $ nodes-to-build-units.sh vyconf          # opam-pin alias, no recipe dir
+  [{"recipe":"dozenos-1x"}]
+  $ nodes-to-build-units.sh dozenos-vpp-patches
+  [{"recipe":"linux-kernel","kernel_blocks":["accel-ppp-ng","linux-kernel"]},{"recipe":"vpp"}]
+  $ nodes-to-build-units.sh squid           # flagged unmappable
+  []   # + a warning on stderr, exit 0
+  ```
+- `shellcheck` on `nodes-to-build-units.sh` and the updated
+  `validate-dep-graph.sh` — clean.
+- `python3 -c "import yaml; yaml.safe_load(...)"` on the edited
+  `rebuild-dispatch.yml` — OK. `actionlint` — zero findings. `grep -ni
+  vyos` / `grep 'uses:.*vyos'` — both 0 hits (unchanged from item #15).
+- New `test/test-nodes-to-build-units.sh`: **40/40** assertions. Full
+  toolkit suite: **259/259** assertions across 9 test files (219
+  pre-item-#30 + 40 new), 0 failures. `resolve-rebuild-set.sh` itself
+  needed no changes and its own 48/48 test suite is unaffected —
+  confirmed byte-identical before/after this item.
+
+### What did NOT change
+
+- `resolve-rebuild-set.sh` — byte-for-byte unchanged.
+- `reverse_dependencies`, `_notes`, and `iso_hard_deps` inside
+  `dep-graph.json` — unchanged; only the new sibling `build_units` section
+  was added.
+- `sync.yml.template` — unchanged (see the sender-reconciliation decision
+  above).
+- No key material handled, no repo pushed/created, no GitHub write
+  operation performed anywhere in this item.

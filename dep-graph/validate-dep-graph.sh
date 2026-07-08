@@ -30,6 +30,22 @@
 #      is the same enumeration item #16's own audit used; kept here as a
 #      standing, re-runnable check for the NEXT upstream sync, not just a
 #      one-time count in dep-graph.json's own "_notes.coverage" prose.
+#   6. (item #30) Every node appearing anywhere in "reverse_dependencies"
+#      (a key or a dependents-array value) has a corresponding entry in the
+#      new top-level "build_units.node_to_unit" map, OR is explicitly
+#      listed in "build_units.unmappable" -- no node may be silently
+#      unmapped. This is what makes rebuild-dispatch.yml's
+#      `cd scripts/package-build/<unit>` safe: every resolvable node now
+#      has a proven buildable unit, or is a documented, known exception.
+#   7. (item #30) Every "build_units.node_to_unit" entry has the correct
+#      shape: {"recipe": <non-empty string>, "kernel_block": <string or
+#      null>}.
+#   8. (item #30) OPTIONAL, only with --tree: every "recipe" value used
+#      anywhere in "build_units.node_to_unit" is a REAL directory under the
+#      given tree, and every non-null "kernel_block" value is a REAL
+#      linux-kernel/package.toml `[[packages]]` block name -- catches a
+#      build-unit map entry that has silently drifted from the actual
+#      buildable tree (e.g. a recipe renamed/removed upstream).
 #
 # Usage:
 #   validate-dep-graph.sh [--graph <path>] [--tree <scripts/package-build>]
@@ -146,22 +162,26 @@ for k in list(rd.keys()):
             findings.append(f"cycle detected: {' -> '.join(result)}")
             break  # one report is enough; fix and re-run to find more
 
+# All node identifiers appearing anywhere in reverse_dependencies (key or
+# dependents-array value) -- used by check 5 (tree coverage) below AND by
+# check 6 (build-unit coverage), so computed once, unconditionally.
+known = set(rd.keys())
+for deps in rd.values():
+    if isinstance(deps, list):
+        known.update(d for d in deps if isinstance(d, str))
+
 # --- check 5 (optional): full coverage against a real package-build tree --
 if tree:
-    recipe_dirs = sorted(
+    recipe_dirs_on_disk = sorted(
         os.path.basename(os.path.dirname(p))
         for p in glob.glob(os.path.join(tree, "*", "package.toml"))
     )
-    if not recipe_dirs:
+    if not recipe_dirs_on_disk:
         findings.append(f"--tree given ({tree}) but no */package.toml found under it -- wrong path?")
     else:
-        known = set(rd.keys())
-        for deps in rd.values():
-            if isinstance(deps, list):
-                known.update(d for d in deps if isinstance(d, str))
-
         expected = set()
-        for recipe in recipe_dirs:
+        disk_kernel_blocks = set()
+        for recipe in recipe_dirs_on_disk:
             toml_path = os.path.join(tree, recipe, "package.toml")
             with open(toml_path) as f:
                 text = f.read()
@@ -170,6 +190,7 @@ if tree:
                 # Bespoke recipe: build.py supports --packages <block-name>
                 # filtering, so every block is its own coverage unit.
                 expected.update(names)
+                disk_kernel_blocks.update(names)
             else:
                 # Generic build.py has no --packages filter: the coverage
                 # unit is the whole recipe directory, matching what
@@ -181,6 +202,54 @@ if tree:
         for m in missing:
             findings.append(f"coverage gap: '{m}' (from {tree}) does not appear anywhere in {graph_path}")
 
+# --- checks 6/7 (item #30): build_units integrity -------------------------
+bu = data.get("build_units", {})
+node_to_unit = bu.get("node_to_unit", {})
+unmappable = bu.get("unmappable", {})
+recipe_dirs_declared = bu.get("recipe_dirs", [])
+kernel_blocks_declared = bu.get("kernel_blocks", [])
+
+if "build_units" not in data:
+    findings.append("top-level 'build_units' section missing -- see dep-graph/nodes-to-build-units.sh / DEP-GRAPH.md item #30")
+else:
+    # check 7: shape of every node_to_unit entry.
+    for node, unit in node_to_unit.items():
+        if not isinstance(unit, dict):
+            findings.append(f"build_units.node_to_unit['{node}']: not a JSON object")
+            continue
+        recipe = unit.get("recipe")
+        if not isinstance(recipe, str) or recipe == "":
+            findings.append(f"build_units.node_to_unit['{node}'].recipe: not a non-empty string: {recipe!r}")
+        kb = unit.get("kernel_block", "MISSING")
+        if kb is not None and not isinstance(kb, str):
+            findings.append(f"build_units.node_to_unit['{node}'].kernel_block: must be null or a string, got {kb!r}")
+        if kb == "MISSING":
+            findings.append(f"build_units.node_to_unit['{node}']: missing required 'kernel_block' key (use null for a non-kernel unit)")
+
+    # check 6: every known graph node has a build unit or is flagged unmappable.
+    unmapped_and_undocumented = sorted(known - set(node_to_unit.keys()) - set(unmappable.keys()))
+    for n in unmapped_and_undocumented:
+        findings.append(f"build-unit coverage gap: node '{n}' (appears in reverse_dependencies) has no entry in build_units.node_to_unit and is not listed in build_units.unmappable")
+
+    # check 8 (optional, --tree): every recipe/kernel_block actually used is real.
+    if tree and recipe_dirs_on_disk:  # noqa: F821 -- only defined inside `if tree:` above, guarded by the same condition
+        disk_recipes = set(recipe_dirs_on_disk)
+        for node, unit in node_to_unit.items():
+            if not isinstance(unit, dict):
+                continue
+            recipe = unit.get("recipe")
+            if isinstance(recipe, str) and recipe not in disk_recipes:
+                findings.append(f"build_units.node_to_unit['{node}'].recipe = '{recipe}' is not a real directory under {tree}")
+            kb = unit.get("kernel_block")
+            if kb is not None and kb not in disk_kernel_blocks:
+                findings.append(f"build_units.node_to_unit['{node}'].kernel_block = '{kb}' is not a real linux-kernel package.toml block under {tree}")
+        for r in recipe_dirs_declared:
+            if r not in disk_recipes:
+                findings.append(f"build_units.recipe_dirs contains '{r}', not a real directory under {tree}")
+        for b in kernel_blocks_declared:
+            if b not in disk_kernel_blocks:
+                findings.append(f"build_units.kernel_blocks contains '{b}', not a real linux-kernel package.toml block under {tree}")
+
 if findings:
     print(f"FAIL: {len(findings)} finding(s):", file=sys.stderr)
     for f_ in findings:
@@ -188,9 +257,11 @@ if findings:
     sys.exit(1)
 
 n_keys = len(rd)
-n_known = len(set(rd.keys()) | {d for deps in rd.values() if isinstance(deps, list) for d in deps})
+n_known = len(known)
+n_units = len(node_to_unit)
+n_unmappable = len(unmappable)
 coverage_msg = ""
 if tree:
     coverage_msg = f", full coverage verified against {tree}"
-print(f"OK: {n_keys} key(s), {n_known} known identifier(s) total, no self-loops, no cycles, all dependents well-formed{coverage_msg}")
+print(f"OK: {n_keys} key(s), {n_known} known identifier(s) total, no self-loops, no cycles, all dependents well-formed{coverage_msg}, {n_units} build-unit(s) mapped + {n_unmappable} flagged unmappable (build-unit coverage complete)")
 PYEOF

@@ -60,6 +60,31 @@
 # replace sidesteps that whole class of bug entirely for a security-relevant
 # value swap.
 #
+# End-state self-check (fail-closed on upstream hash drift): the literal
+# OLD_HASH match above is a HARDCODED string, re-verified by hand against a
+# fresh upstream clone (see the "Targets" comment). If upstream ever ships a
+# DIFFERENT hash in one of the 5 known files -- a re-salted/reformatted hash
+# that still authenticates `vyos`, or any other value -- `grep -rlF
+# "$OLD_HASH"` simply will not find it, HIT_FILES is empty, and there is
+# nothing for the replace loop to do. That is NOT the same thing as "already
+# fixed": absence of the specific old string only proves the OLD known value
+# is gone, it says nothing about what the NEW value actually is. So, after
+# the (possibly no-op) replace step, this script UNCONDITIONALLY re-reads
+# each of the 5 known files and asserts that whatever `$6$...` hash is
+# actually on disk right now authenticates the plaintext `dozenos` --
+# regardless of whether the replace loop above ran. Any known file whose
+# live hash does not authenticate `dozenos` (still `vyos`, or anything else)
+# is a `die`, loudly, naming the offending file, instead of a silent
+# "no occurrences found" no-op. This is what makes the script fail CLOSED on
+# upstream hash drift rather than fail silent.
+#
+# Verification uses `openssl passwd -6 -salt <extracted-salt> dozenos`
+# rather than Python's `crypt` module: `crypt` was removed from the Python
+# standard library (PEP 594, gone as of 3.13), so it cannot be relied on in
+# the sync environment; `openssl passwd -6` is local-only (no network I/O)
+# and already a hard dependency of this script (see the NEW_HASH generation
+# below), so re-using it for verification adds no new dependency.
+#
 # Usage:
 #   regen-default-password-hash.sh <target-tree>
 #
@@ -79,7 +104,20 @@ command -v python3 >/dev/null 2>&1 || die "python3 not found on PATH"
 # The exact inherited VyOS default-login SHA-512 crypt hash (crypt of the
 # plaintext `vyos`). Full string used as the match key -- see "Idempotent"
 # above for why this must be the complete hash, not just the `$6$` prefix.
+# shellcheck disable=SC2016 # literal crypt hash, must NOT expand
 OLD_HASH='$6$QxPS.uk6mfo$9QBSo8u1FkH16gMyAVhus6fU3LOzvLR9Z9.82m3tiHFAxTtIkhaZSWssSgzt4v4dGAL8rhVQxTg0oAG9/q11h/'
+
+# The 5 known files that must carry the default-user password hash -- see
+# the "Targets" comment above. Used by the end-state self-check below, in
+# addition to (not instead of) the whole-tree grep this script already does
+# for the replacement pass itself.
+KNOWN_FILES=(
+  data/config.boot.default
+  tests/data/config.boot.default
+  src/tests/test_initial_setup.py
+  smoketest/configs/firewall-groups-name
+  smoketest/configs/assert/firewall-groups-name
+)
 
 # Find every file under $TARGET (excluding .git) that still carries the old
 # hash. grep -F: literal fixed-string match (the hash contains regex
@@ -87,19 +125,18 @@ OLD_HASH='$6$QxPS.uk6mfo$9QBSo8u1FkH16gMyAVhus6fU3LOzvLR9Z9.82m3tiHFAxTtIkhaZSWs
 mapfile -d '' -t HIT_FILES < <(grep -rlFZ "$OLD_HASH" "$TARGET" --exclude-dir=.git 2>/dev/null || true)
 
 if [ "${#HIT_FILES[@]}" -eq 0 ]; then
-  echo "regen-default-password-hash: already fixed / no occurrences found (idempotent no-op)"
-  exit 0
-fi
+  echo "regen-default-password-hash: no occurrences of the known old hash literal found (already fixed, or upstream hash drifted -- self-check below decides which)"
+else
+  NEW_HASH=$(openssl passwd -6 dozenos)
+  [ -n "$NEW_HASH" ] || die "openssl passwd -6 produced empty output"
+  # shellcheck disable=SC2016 # literal `$6$` prefix pattern, must NOT expand
+  case "$NEW_HASH" in
+    '$6$'*) : ;;
+    *) die "openssl passwd -6 produced an unexpected format: $NEW_HASH" ;;
+  esac
 
-NEW_HASH=$(openssl passwd -6 dozenos)
-[ -n "$NEW_HASH" ] || die "openssl passwd -6 produced empty output"
-case "$NEW_HASH" in
-  '$6$'*) : ;;
-  *) die "openssl passwd -6 produced an unexpected format: $NEW_HASH" ;;
-esac
-
-for f in "${HIT_FILES[@]}"; do
-  OLD_HASH="$OLD_HASH" NEW_HASH="$NEW_HASH" python3 - "$f" <<'PY'
+  for f in "${HIT_FILES[@]}"; do
+    OLD_HASH="$OLD_HASH" NEW_HASH="$NEW_HASH" python3 - "$f" <<'PY'
 import os
 import sys
 
@@ -117,7 +154,48 @@ if updated == data:
 with open(path, "w", encoding="utf-8") as fh:
     fh.write(updated)
 PY
-  echo "regen-default-password-hash: patched ${f#"$TARGET"/}"
+    echo "regen-default-password-hash: patched ${f#"$TARGET"/}"
+  done
+
+  echo "regen-default-password-hash: ${#HIT_FILES[@]} file(s) patched with a freshly generated hash of 'dozenos'"
+fi
+
+# ---------------------------------------------------------------------------
+# Unconditional end-state self-check -- see the header comment above for the
+# full rationale. Runs every time, whether or not the replace step above did
+# anything, so upstream hash drift (a DIFFERENT hash than OLD_HASH landing
+# in a known file) fails the sync instead of passing silently.
+# ---------------------------------------------------------------------------
+for rel in "${KNOWN_FILES[@]}"; do
+  f="$TARGET/$rel"
+  [ -f "$f" ] || die "missing expected target file: $rel"
+
+  # Extract the `$6$...` candidate(s) actually present in this file. Same
+  # literal token shape the replacement loop above operates on (delimited by
+  # quotes/whitespace, never by regex metacharacters inside the hash).
+  # Known files are expected to carry EXACTLY ONE such hash -- the
+  # default-user's -- confirmed by the header comment's "All 5 files carry
+  # the exact SAME hash string" diff. If a known file ever contains zero or
+  # more than one `$6$` candidate, that is itself a drift signal (either the
+  # default-user hash is missing, or upstream added a second unrelated hash
+  # to a file this script must be precise about) -- die loudly rather than
+  # silently guessing which one is "the" default-user hash.
+  # shellcheck disable=SC2016 # literal `$6$` regex pattern, must NOT expand
+  mapfile -t candidates < <(grep -ohE '\$6\$[^"'"'"' ]+' "$f" || true)
+  case "${#candidates[@]}" in
+    1) : ;;
+    0) die "$rel: no \$6\$ default-user password hash found (expected exactly 1)" ;;
+    *) die "$rel: found ${#candidates[@]} distinct \$6\$ hash candidates, expected exactly 1 -- cannot determine which is the default-user hash" ;;
+  esac
+  live_hash="${candidates[0]}"
+
+  salt=$(printf '%s' "$live_hash" | awk -F'$' '{print $3}')
+  [ -n "$salt" ] || die "$rel: could not parse salt out of live hash: $live_hash"
+
+  check=$(openssl passwd -6 -salt "$salt" dozenos)
+  if [ "$check" != "$live_hash" ]; then
+    die "$rel: live default-user password hash does NOT authenticate 'dozenos' (found: $live_hash) -- upstream hash drift: OLD_HASH in this script is stale and must be re-verified against a fresh upstream clone"
+  fi
 done
 
-echo "regen-default-password-hash: ${#HIT_FILES[@]} file(s) patched with a freshly generated hash of 'dozenos'"
+echo "regen-default-password-hash: self-check passed -- all ${#KNOWN_FILES[@]} known files' default-user password hash authenticates 'dozenos'"

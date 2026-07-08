@@ -98,7 +98,13 @@ if [ "$VERIFY_ONLY" -eq 1 ]; then
   n=$(verify)
   if [ "$n" -eq 0 ]; then echo "verify: OK (0 residual vyos)"; exit 0; fi
   echo "verify: FAIL ($n residual vyos):" >&2
-  grep -rIn vyos "$TARGET" --exclude-dir=.git >&2
+  # -i to match verify()'s case-insensitive count above -- a case-sensitive
+  # listing here would silently omit a VyOS/VYOS/Vyos-form residual from the
+  # printed lines while still counting it in $n, which would in turn make
+  # mirror-push.sh's allowlist-diffing (residuals_allowlisted(), which reads
+  # this listing line-by-line) blind to it too. Every hit contributing to $n
+  # must appear in this listing.
+  grep -rIni vyos "$TARGET" --exclude-dir=.git >&2
   exit 1
 fi
 

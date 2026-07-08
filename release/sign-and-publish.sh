@@ -12,7 +12,10 @@
 #   GITHUB_TOKEN          -- the job's own token; same-repo publish needs no PAT
 #
 # It fails loudly (does not fabricate a throwaway key) if MINISIGN_SECRET_KEY
-# or MINISIGN_PASSWORD is unset/empty, and if GITHUB_TOKEN is unset/empty.
+# or GITHUB_TOKEN is unset/empty. MINISIGN_PASSWORD MAY be empty/unset -- that
+# is the legitimate no-passphrase case (an unencrypted / empty-passphrase
+# minisign key); an empty password is fed to minisign, and if the key actually
+# needs a password minisign itself fails loudly at signing time.
 #
 # Usage (run inside the nightly workflow's job, both env vars exported from
 # secrets, cwd = the directory containing the built ISO):
@@ -51,8 +54,8 @@ Usage: sign-and-publish.sh --iso ISO_PATH --version-json JSON_PATH \
 Required env vars (never pass key material as an argument):
   MINISIGN_SECRET_KEY   base64-encoded minisign secret keyfile
                          (CI-SECRETS.md: org secret MINISIGN_SECRET_KEY)
-  MINISIGN_PASSWORD     password unlocking MINISIGN_SECRET_KEY
-                         (CI-SECRETS.md: org secret MINISIGN_PASSWORD)
+  MINISIGN_PASSWORD     password unlocking MINISIGN_SECRET_KEY; MAY be empty
+                         /unset for a no-passphrase key (CI-SECRETS.md)
   GITHUB_TOKEN           token for `gh release create` in the target repo
                          (workflow's own GITHUB_TOKEN; same-repo publish)
 
@@ -114,9 +117,12 @@ if [ -z "${MINISIGN_SECRET_KEY:-}" ]; then
   echo "E: MINISIGN_SECRET_KEY is unset or empty -- refusing to fabricate a throwaway key. See CI-SECRETS.md." >&2
   exit 1
 fi
+# MINISIGN_PASSWORD may legitimately be empty/unset: a no-passphrase minisign
+# key. We feed an empty password to minisign below; if the key really is
+# passphrase-protected, minisign fails loudly at signing time. So we do NOT
+# hard-fail here -- that would make no-passphrase keys unusable.
 if [ -z "${MINISIGN_PASSWORD:-}" ]; then
-  echo "E: MINISIGN_PASSWORD is unset or empty. See CI-SECRETS.md." >&2
-  exit 1
+  echo "I: MINISIGN_PASSWORD empty/unset -- signing as a no-passphrase key." >&2
 fi
 if [ -z "${GITHUB_TOKEN:-}" ]; then
   echo "E: GITHUB_TOKEN is unset or empty -- required for 'gh release create'." >&2
@@ -174,7 +180,7 @@ echo "I: signing $iso" >&2
 # keeps the password out of argv (not visible in `ps`/process listings),
 # unlike passing it as a CLI flag.
 minisign -Sm "$iso" -s "$keyfile" <<EOF
-${MINISIGN_PASSWORD}
+${MINISIGN_PASSWORD:-}
 EOF
 
 minisig="${iso}.minisig"
