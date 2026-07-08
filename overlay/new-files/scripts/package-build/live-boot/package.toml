@@ -1,0 +1,23 @@
+# DozenOS-added package-build recipe for `live-boot` (item: live-boot gap,
+# 2026-07-08). vyos-build has NO live-boot recipe of its own -- upstream VyOS
+# builds live-boot in its standalone `vyos/live-boot` repo's own CI and
+# publishes the .deb to its apt repo. DozenOS instead builds it in-tree from
+# the `dozenos/live-boot` mirror (a four-form rename-transform snapshot of
+# `vyos/live-boot`), exactly like every other standalone package mirror
+# (hvinfo, ipaddrcheck, vyatta-*, ...), so the ISO's ephemeral apt repo carries
+# a DozenOS-built `live-boot`/`live-boot-initramfs-tools` (`1:...dozenos1`)
+# instead of pulling VyOS's prebuilt `1:...vyos1` from an external repo.
+#
+# Produces three binaries from one source: live-boot, live-boot-doc,
+# live-boot-initramfs-tools (see debian/control). live-boot-initramfs-tools is
+# the one the generic ISO actually pulls in (as a live-config dependency).
+#
+# This file is shipped as an overlay new-file (overlay/new-files/scripts/
+# package-build/live-boot/) so mirror-push.sh re-applies it on every
+# dozenos-build sync -- it is NOT part of the upstream vyos-build tree.
+[[packages]]
+name = "live-boot"
+commit_id = "rolling"
+scm_url = "https://github.com/dozenos/live-boot.git"
+pre_build_hook = "/dozenos-rebrand/rename-transform.sh ."
+build_cmd = "dpkg-buildpackage -us -uc -tc -b"
