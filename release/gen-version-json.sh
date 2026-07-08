@@ -1,39 +1,44 @@
 #!/usr/bin/env bash
 # gen-version-json.sh -- emit the version.json manifest for a DozenOS
-# nightly ISO release (see ../DISTRIBUTION.md, "version.json schema").
+# nightly release (see ../DISTRIBUTION.md, "version.json schema").
+#
+# Multi-flavor/multi-format aware: pass one --artifact FLAVOR:PATH per
+# built image file (any format -- .iso, .qcow2, .vmdk, ...); each becomes
+# an entry in the "artifacts" array with its flavor, format (file
+# extension), sha256, and download URL. For backward compatibility with
+# the original single-ISO schema, the top-level "iso"/"minisig" objects
+# are still emitted, pointing at the generic flavor's .iso when present
+# (else the first .iso given).
 #
 # Idempotent, no secrets, no network access. Pure computation from the
-# arguments it is given: it hashes the ISO on disk, formats a JSON object,
-# and writes it to stdout (or --out FILE). Run this AFTER the ISO and its
-# .minisig already exist on disk (this script does not sign anything --
-# see ./sign-and-publish.md for that step) and BEFORE `gh release create`
-# uploads version.json alongside them.
+# arguments it is given: it hashes the files on disk, formats a JSON
+# object, and writes it to stdout (or --out FILE). Run this AFTER the
+# artifacts exist on disk (signing happens separately -- see
+# ./sign-and-publish.sh) and BEFORE `gh release create` uploads
+# version.json alongside them.
 #
 # This script must never be passed key material. It only ever reads the
-# already-built .iso file's bytes to hash them.
+# already-built artifact files' bytes to hash them.
 set -euo pipefail
 
 usage() {
   cat <<'EOF'
-Usage: gen-version-json.sh --version VERSION --iso-path PATH [OPTIONS]
+Usage: gen-version-json.sh --version VERSION --artifact FLAVOR:PATH [--artifact ...] [OPTIONS]
 
 Required:
   --version VERSION       Release version string, e.g. 2026.07.08-0130-rolling
                            (DozenOS nightly scheme: YYYY.MM.DD-HHMM-rolling)
-  --iso-path PATH         Path to the built .iso file on disk (must exist,
-                           readable, non-empty). Its sha256 is computed here.
+  --artifact FLAVOR:PATH  One built image file, tagged with its flavor name.
+                           Repeatable. PATH must exist, be readable and
+                           non-empty; FLAVOR must not contain ':'.
+                           Example: --artifact kvm:build/dozenos-...-kvm-amd64.qcow2
 
 Options:
-  --iso-name NAME         Asset filename for the ISO as published in the
-                           GitHub Release. Default: basename of --iso-path.
-                           Expected form: dozenos-<version>-generic-amd64.iso
-  --minisig-name NAME     Asset filename for the detached minisign signature.
-                           Default: "<iso-name>.minisig"
   --release-url BASE_URL  Base URL the release assets are downloadable from,
                            e.g. https://github.com/dozenos/dozenos-nightly-build/releases/download/<tag>
-                           When given, "iso.url"/"minisig.url" are BASE_URL
-                           joined with the asset filename. When omitted,
-                           those fields are emitted as null.
+                           When given, each artifact's "url"/"minisig_url" are
+                           BASE_URL joined with the asset filename. When
+                           omitted, those fields are emitted as null.
   --out FILE              Write JSON to FILE instead of stdout.
   -h, --help              Show this help and exit.
 
@@ -44,18 +49,18 @@ safe to commit/publish as a public release asset.
 Example:
   gen-version-json.sh \
     --version 2026.07.08-0130-rolling \
-    --iso-path ./dozenos-2026.07.08-0130-rolling-generic-amd64.iso \
+    --artifact generic:build/dozenos-2026.07.08-0130-rolling-generic-amd64.iso \
+    --artifact kvm:build/dozenos-2026.07.08-0130-rolling-kvm-amd64.iso \
+    --artifact kvm:build/dozenos-2026.07.08-0130-rolling-kvm-amd64.qcow2 \
     --release-url https://github.com/dozenos/dozenos-nightly-build/releases/download/2026.07.08-0130-rolling \
     --out version.json
 EOF
 }
 
 version=""
-iso_path=""
-iso_name=""
-minisig_name=""
 release_url=""
 out_file=""
+artifacts=()
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -63,16 +68,8 @@ while [ $# -gt 0 ]; do
       version="${2:?--version requires a value}"
       shift 2
       ;;
-    --iso-path)
-      iso_path="${2:?--iso-path requires a value}"
-      shift 2
-      ;;
-    --iso-name)
-      iso_name="${2:?--iso-name requires a value}"
-      shift 2
-      ;;
-    --minisig-name)
-      minisig_name="${2:?--minisig-name requires a value}"
+    --artifact)
+      artifacts+=("${2:?--artifact requires a value}")
       shift 2
       ;;
     --release-url)
@@ -99,16 +96,8 @@ if [ -z "$version" ]; then
   echo "E: --version is required" >&2
   exit 1
 fi
-if [ -z "$iso_path" ]; then
-  echo "E: --iso-path is required" >&2
-  exit 1
-fi
-if [ ! -f "$iso_path" ]; then
-  echo "E: --iso-path '$iso_path' does not exist or is not a regular file" >&2
-  exit 1
-fi
-if [ ! -s "$iso_path" ]; then
-  echo "E: --iso-path '$iso_path' is empty" >&2
+if [ "${#artifacts[@]}" -eq 0 ]; then
+  echo "E: at least one --artifact FLAVOR:PATH is required" >&2
   exit 1
 fi
 if ! command -v sha256sum >/dev/null 2>&1; then
@@ -116,65 +105,119 @@ if ! command -v sha256sum >/dev/null 2>&1; then
   exit 1
 fi
 
-if [ -z "$iso_name" ]; then
-  iso_name="$(basename -- "$iso_path")"
-fi
-if [ -z "$minisig_name" ]; then
-  minisig_name="${iso_name}.minisig"
-fi
-
-sha256="$(sha256sum -- "$iso_path" | awk '{print $1}')"
-if [ -z "$sha256" ] || [ "${#sha256}" -ne 64 ]; then
-  echo "E: sha256sum did not return a 64-char hex digest for '$iso_path'" >&2
-  exit 1
-fi
-
-published_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-
 # Minimal JSON string escaper: backslash and double-quote only. Every field
-# fed through this is a version string, filename, or URL -- none of which
-# are expected to contain control characters -- but this keeps the script
-# honest instead of assuming that.
+# fed through this is a version string, flavor name, filename, or URL --
+# none of which are expected to contain control characters -- but this
+# keeps the script honest instead of assuming that.
 json_escape() {
   printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'
 }
 
-iso_url_json="null"
-minisig_url_json="null"
+base=""
 if [ -n "$release_url" ]; then
-  # Join without introducing a double slash if release_url already ends in /
   base="${release_url%/}"
-  iso_url_json="\"$(json_escape "${base}/${iso_name}")\""
-  minisig_url_json="\"$(json_escape "${base}/${minisig_name}")\""
 fi
 
-version_j="$(json_escape "$version")"
-iso_name_j="$(json_escape "$iso_name")"
-minisig_name_j="$(json_escape "$minisig_name")"
-sha256_j="$(json_escape "$sha256")"
-published_at_j="$(json_escape "$published_at")"
+url_json() {
+  # $1 = asset filename; emits a JSON value (quoted URL or null)
+  if [ -n "$base" ]; then
+    printf '"%s"' "$(json_escape "${base}/$1")"
+  else
+    printf 'null'
+  fi
+}
+
+artifact_entries=""
+legacy_iso_name=""
+legacy_iso_sha=""
+
+for spec in "${artifacts[@]}"; do
+  flavor="${spec%%:*}"
+  path="${spec#*:}"
+  if [ -z "$flavor" ] || [ "$flavor" = "$spec" ] || [ -z "$path" ]; then
+    echo "E: malformed --artifact '$spec' (expected FLAVOR:PATH)" >&2
+    exit 1
+  fi
+  if [ ! -f "$path" ] || [ ! -s "$path" ]; then
+    echo "E: artifact '$path' does not exist, is not a regular file, or is empty" >&2
+    exit 1
+  fi
+
+  name="$(basename -- "$path")"
+  format="${name##*.}"
+  sha256="$(sha256sum -- "$path" | awk '{print $1}')"
+  if [ -z "$sha256" ] || [ "${#sha256}" -ne 64 ]; then
+    echo "E: sha256sum did not return a 64-char hex digest for '$path'" >&2
+    exit 1
+  fi
+
+  # Legacy top-level iso pointer: prefer the generic flavor's .iso; fall
+  # back to the first .iso seen.
+  if [ "$format" = "iso" ] && { [ "$flavor" = "generic" ] || [ -z "$legacy_iso_name" ]; }; then
+    legacy_iso_name="$name"
+    legacy_iso_sha="$sha256"
+  fi
+
+  entry=$(cat <<EOF
+    {
+      "flavor": "$(json_escape "$flavor")",
+      "format": "$(json_escape "$format")",
+      "name": "$(json_escape "$name")",
+      "sha256": "$sha256",
+      "url": $(url_json "$name"),
+      "minisig": {
+        "name": "$(json_escape "${name}.minisig")",
+        "url": $(url_json "${name}.minisig")
+      }
+    }
+EOF
+)
+  if [ -n "$artifact_entries" ]; then
+    artifact_entries="$artifact_entries,
+$entry"
+  else
+    artifact_entries="$entry"
+  fi
+done
+
+published_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+# Legacy single-ISO block (kept for backward compatibility with the
+# original schema; null-fielded if no .iso was among the artifacts).
+if [ -n "$legacy_iso_name" ]; then
+  legacy_block=$(cat <<EOF
+  "iso": {
+    "name": "$(json_escape "$legacy_iso_name")",
+    "sha256": "$legacy_iso_sha",
+    "url": $(url_json "$legacy_iso_name")
+  },
+  "minisig": {
+    "name": "$(json_escape "${legacy_iso_name}.minisig")",
+    "url": $(url_json "${legacy_iso_name}.minisig")
+  },
+EOF
+)
+else
+  legacy_block='  "iso": null,
+  "minisig": null,'
+fi
 
 json=$(cat <<EOF
 {
-  "version": "${version_j}",
-  "iso": {
-    "name": "${iso_name_j}",
-    "sha256": "${sha256_j}",
-    "url": ${iso_url_json}
-  },
-  "minisig": {
-    "name": "${minisig_name_j}",
-    "url": ${minisig_url_json}
-  },
+  "version": "$(json_escape "$version")",
+${legacy_block}
+  "artifacts": [
+${artifact_entries}
+  ],
   "minisign_pubkey_file": "minisign.pub",
-  "published_at": "${published_at_j}"
+  "published_at": "$(json_escape "$published_at")"
 }
 EOF
 )
 
 if [ -n "$out_file" ]; then
   printf '%s\n' "$json" > "$out_file"
-  echo "I: wrote $out_file" >&2
+  echo "I: wrote $out_file (${#artifacts[@]} artifact(s))" >&2
 else
   printf '%s\n' "$json"
 fi

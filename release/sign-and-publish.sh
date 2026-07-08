@@ -47,7 +47,8 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-Usage: sign-and-publish.sh --iso ISO_PATH --version-json JSON_PATH \
+Usage: sign-and-publish.sh --asset PATH [--asset PATH ...] \
+         --version-json JSON_PATH \
          --tag TAG --repo OWNER/REPO [--title TITLE] [--notes NOTES] \
          [--notes-file FILE]
 
@@ -60,7 +61,9 @@ Required env vars (never pass key material as an argument):
                          (workflow's own GITHUB_TOKEN; same-repo publish)
 
 Required flags:
-  --iso PATH             Built ISO file to sign and publish.
+  --asset PATH           A built image file to sign and publish. Repeatable
+                         (multi-flavor releases: every iso/qcow2/vmdk/...).
+                         --iso is accepted as a backward-compatible alias.
   --version-json PATH    Generated version.json (see gen-version-json.sh)
                          to attach as a release asset.
   --tag TAG              Release tag, e.g. 2026.07.08-0130-rolling
@@ -75,7 +78,7 @@ Optional flags:
 EOF
 }
 
-iso=""
+assets=()
 version_json=""
 tag=""
 repo=""
@@ -85,7 +88,9 @@ notes_file=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --iso) iso="${2:?--iso requires a value}"; shift 2 ;;
+    # --iso is kept as a backward-compatible alias for --asset (the
+    # original single-ISO interface).
+    --asset|--iso) assets+=("${2:?$1 requires a value}"); shift 2 ;;
     --version-json) version_json="${2:?--version-json requires a value}"; shift 2 ;;
     --tag) tag="${2:?--tag requires a value}"; shift 2 ;;
     --repo) repo="${2:?--repo requires a value}"; shift 2 ;;
@@ -97,16 +102,22 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-for req in iso version_json tag repo; do
+for req in version_json tag repo; do
   if [ -z "${!req}" ]; then
     echo "E: --${req//_/-} is required" >&2
     exit 1
   fi
 done
-if [ ! -f "$iso" ]; then
-  echo "E: --iso '$iso' does not exist or is not a regular file" >&2
+if [ "${#assets[@]}" -eq 0 ]; then
+  echo "E: at least one --asset PATH is required" >&2
   exit 1
 fi
+for a in "${assets[@]}"; do
+  if [ ! -f "$a" ]; then
+    echo "E: --asset '$a' does not exist or is not a regular file" >&2
+    exit 1
+  fi
+done
 if [ ! -f "$version_json" ]; then
   echo "E: --version-json '$version_json' does not exist or is not a regular file" >&2
   exit 1
@@ -174,21 +185,24 @@ if [ ! -s "$keyfile" ]; then
   exit 1
 fi
 
-echo "I: signing $iso" >&2
 # MINISIGN_PASSWORD delivery: minisign reads the key password from stdin
 # when -W is not given and no TTY is attached; feeding it via a heredoc
 # keeps the password out of argv (not visible in `ps`/process listings),
 # unlike passing it as a CLI flag.
-minisign -Sm "$iso" -s "$keyfile" <<EOF
+minisigs=()
+for a in "${assets[@]}"; do
+  echo "I: signing $a" >&2
+  minisign -Sm "$a" -s "$keyfile" <<EOF
 ${MINISIGN_PASSWORD:-}
 EOF
-
-minisig="${iso}.minisig"
-if [ ! -f "$minisig" ]; then
-  echo "E: expected signature file '$minisig' was not produced" >&2
-  exit 1
-fi
-echo "I: wrote $minisig" >&2
+  minisig="${a}.minisig"
+  if [ ! -f "$minisig" ]; then
+    echo "E: expected signature file '$minisig' was not produced" >&2
+    exit 1
+  fi
+  echo "I: wrote $minisig" >&2
+  minisigs+=("$minisig")
+done
 
 # --- publish the GitHub Release (same-repo: GITHUB_TOKEN is sufficient,
 #     no cross-repo PAT/BUILD_PAT needed -- see DISTRIBUTION.md). ---
@@ -201,9 +215,9 @@ else
   notes_args=(--notes "Automated DozenOS nightly build. See version.json for asset checksums.")
 fi
 
-echo "I: creating GitHub Release ${tag} in ${repo}" >&2
+echo "I: creating GitHub Release ${tag} in ${repo} (${#assets[@]} asset(s) + signatures + version.json)" >&2
 GH_TOKEN="$GITHUB_TOKEN" gh release create "$tag" \
-  "$iso" "$minisig" "$version_json" \
+  "${assets[@]}" "${minisigs[@]}" "$version_json" \
   --repo "$repo" \
   --title "$title" \
   "${notes_args[@]}"
