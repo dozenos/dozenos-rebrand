@@ -1,20 +1,20 @@
-# DozenOS-added package-build recipe for `live-boot` (item: live-boot gap,
-# 2026-07-08). vyos-build has NO live-boot recipe of its own -- upstream VyOS
-# builds live-boot in its standalone `vyos/live-boot` repo's own CI and
-# publishes the .deb to its apt repo. DozenOS instead builds it in-tree from
-# the `dozenos/live-boot` mirror (a four-form rename-transform snapshot of
-# `vyos/live-boot`), exactly like every other standalone package mirror
-# (hvinfo, ipaddrcheck, vyatta-*, ...), so the ISO's ephemeral apt repo carries
-# a DozenOS-built `live-boot`/`live-boot-initramfs-tools` (`1:...dozenos1`)
-# instead of pulling VyOS's prebuilt `1:...vyos1` from an external repo.
+# DozenOS-added package-build recipe for `live-boot` (added 2026-07-08).
 #
-# Produces three binaries from one source: live-boot, live-boot-doc,
-# live-boot-initramfs-tools (see debian/control). live-boot-initramfs-tools is
-# the one the generic ISO actually pulls in (as a live-config dependency).
+# The generic ISO needs a forked `live-boot` (Debian's stock live-boot lacks
+# the patches the router image relies on). Upstream builds it in a standalone
+# source repo and publishes the prebuilt .deb to an external apt repo; DozenOS
+# instead builds it IN-TREE from the `dozenos/live-boot` mirror -- a
+# rename-transform snapshot of that upstream source -- exactly like every other
+# standalone package mirror (hvinfo, ipaddrcheck, vyatta-*, ...), so the ISO's
+# ephemeral apt repo carries a DozenOS-built `live-boot` / `live-boot-doc` /
+# `live-boot-initramfs-tools` instead of pulling a prebuilt one from an external
+# host. live-boot-initramfs-tools is the binary the generic ISO actually pulls
+# in (as a live-config dependency).
 #
-# This file is shipped as an overlay new-file (overlay/new-files/scripts/
-# package-build/live-boot/) so mirror-push.sh re-applies it on every
-# dozenos-build sync -- it is NOT part of the upstream vyos-build tree.
+# Shipped as an overlay new-file (overlay/new-files/scripts/package-build/
+# live-boot/) so mirror-push.sh re-applies it on every dozenos-build sync --
+# it is NOT part of the mirrored upstream build tree. See dozenos-rebrand's
+# commit history / CI notes for the exact upstream provenance.
 [[packages]]
 name = "live-boot"
 commit_id = "rolling"
