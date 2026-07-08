@@ -38,16 +38,22 @@
 # see dozenos-rebrand/overlay/MANIFEST.md's "Per-repo overlay split" section
 # for where these were first flagged as vyos-1x-repo concerns):
 #
-#   - opam pins in libvyosconfig/Makefile (`vyos1x-config` ->
-#     `dozenos1x-config`, `github.com/vyos/*` -> `github.com/dozenos/*`) --
-#     already handled correctly by rename-transform.sh's generic four-form
-#     pass (the package name and the URL host are both ordinary
-#     four-form-transformable strings). Confirmed post-transform:
+#   - opam pin PACKAGE NAMES + URL HOSTS in libvyosconfig/Makefile
+#     (`vyos1x-config` -> `dozenos1x-config`, `github.com/vyos/*` ->
+#     `github.com/dozenos/*`) -- handled by rename-transform.sh's generic
+#     four-form pass. Confirmed post-transform:
 #       PACKAGES=dozenos1x-config,vyconf.vyconfd-config,...
 #       opam pin add dozenos1x-config https://github.com/dozenos/dozenos1x-config.git#<sha> -y
 #       opam pin add vyconf https://github.com/dozenos/vyconf.git#<sha> -y
 #     (vyconf's own package name is untouched, correctly, since "vyconf"
 #     does not contain "vyos"; only its URL host is rewritten.)
+#     *** BUT the `#<sha>` COMMIT FRAGMENT is NOT four-form-transformable and
+#     is the original upstream vyos1x-config/vyconf commit -- which does NOT
+#     exist in the mode-B snapshot mirrors (each carries a fresh single
+#     commit). opam then dies "Commit not found on repository". That IS
+#     handled here, by step 3/3 (value-fixes/pin-opam-ocaml-branch.sh), which
+#     re-pins both to `#rolling` (the mirror's tracking branch). This was the
+#     dozenos-1x package-build failure caught by the first full CI run.
 #
 #   - `open Vyos1x` in libdozenosconfig/lib/bindings.ml (the OCaml ctypes
 #     bindings) -- already handled by the four-form pass. Confirmed
@@ -103,10 +109,13 @@ TARGET=$(cd "$TARGET" && pwd)
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 VALUE_FIXES="$SCRIPT_DIR/value-fixes"
 
-echo "== apply-overlay (dozenos-1x): step 1/2 -- value-fixes/regen-default-password-hash.sh =="
+echo "== apply-overlay (dozenos-1x): step 1/3 -- value-fixes/regen-default-password-hash.sh =="
 "$VALUE_FIXES/regen-default-password-hash.sh" "$TARGET"
 
-echo "== apply-overlay (dozenos-1x): step 2/2 -- value-fixes/pin-nonmirrored-org-refs.sh =="
+echo "== apply-overlay (dozenos-1x): step 2/3 -- value-fixes/pin-nonmirrored-org-refs.sh =="
 "$VALUE_FIXES/pin-nonmirrored-org-refs.sh" "$TARGET"
+
+echo "== apply-overlay (dozenos-1x): step 3/3 -- value-fixes/pin-opam-ocaml-branch.sh =="
+"$VALUE_FIXES/pin-opam-ocaml-branch.sh" "$TARGET"
 
 echo "apply-overlay (dozenos-1x): done"
