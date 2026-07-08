@@ -28,10 +28,29 @@
 #      `[trusted=yes]`, see ../CI-SECRETS.md's "GPG role reconciliation":
 #      signing an ephemeral, runner-local, single-tenant repo's Release file
 #      buys nothing and is deliberately NOT done here).
-#   5. Prints the exact value to pass to `build-dozenos-image`'s
-#      `--dozenos-mirror` option on stdout (one line, nothing else -- safe to
-#      capture with `$(...)`), and the full illustrative `deb`/`deb-src`
-#      source-list lines to stderr for a human/log to read.
+#   5. Prints the repo's `[trusted=yes] file://<output-dir>` value on stdout
+#      (one line, nothing else -- safe to capture with `$(...)`), and the
+#      full illustrative `deb`/`deb-src` source-list lines to stderr for a
+#      human/log to read.
+#
+# CONSUMPTION WARNING (learned the hard way, 2026-07-08): the file:// value
+# is only usable by an apt whose filesystem root can actually see
+# <output-dir>. `build-dozenos-image`'s `lb build` runs apt INSIDE the
+# live-build chroot (build/chroot/), where <output-dir> does NOT exist --
+# every file:// index fetch 404s there (apt Ign-s the missing Packages index
+# but hard-fails on the missing Sources index, and package installs would
+# fail regardless). For that consumer, serve <output-dir> over localhost
+# HTTP from the same container and pass
+#   --dozenos-mirror "[trusted=yes] http://127.0.0.1:<port>"
+# instead -- the chroot shares the container network namespace, so
+# 127.0.0.1 is reachable from chroot apt at every stage that needs it:
+#   (cd <output-dir> && python3 -m http.server --bind 127.0.0.1 8099 &)
+# (Do NOT try to seed <output-dir> into the chroot to keep a file:// URL:
+# that races lb clean, the bootstrap cache restore, and debootstrap itself
+# -- four distinct failure modes were hit in local testing before this
+# approach was abandoned in favor of localhost HTTP.) See
+# dozenos-nightly-build's .github/workflows/nightly.yml build-iso step for
+# the canonical wiring.
 #
 # --suite/--component MUST match what build-dozenos-image writes into
 # config/archives/dozenos.list.chroot: it formats the literal template
@@ -210,6 +229,26 @@ fi
 
 gzip -kf "$binary_dir/Packages"
 
+# Source index (empty, but PRESENT). build-dozenos-image ALWAYS writes a
+# `deb-src <dozenos_mirror> <branch> main` entry for this repo (see
+# scripts/image-build/build-dozenos-image, "deb-src {dozenos_mirror} ..."), and
+# live-build runs apt with source acquisition on, so `lb build` fetches
+# dists/<suite>/<component>/source/Sources from here. This pool holds only
+# binary .debs (no .dsc/source), so the Sources index is legitimately EMPTY --
+# but it must still EXIST: Debian bookworm's apt (the ghcr build container)
+# hard-fails `lb build` with "E: Failed to fetch .../source/Sources -- File not
+# found" when the index is absent (newer apt only warns and skips). Generate it
+# with apt-ftparchive (empty output on a .dsc-less pool) BEFORE the release step
+# below so apt-ftparchive release advertises it in Release with checksums.
+source_dir="$out_dir/dists/$suite/$component/source"
+mkdir -p "$source_dir"
+if ! ( cd "$out_dir" && apt-ftparchive sources "pool/$component" ) \
+       > "$source_dir/Sources" 2>>"$scan_stderr"; then
+  cat "$scan_stderr" >&2
+  die "apt-ftparchive sources failed"
+fi
+gzip -kf "$source_dir/Sources"
+
 if ! ( cd "$out_dir" && apt-ftparchive \
          -o APT::FTPArchive::Release::Origin=DozenOS \
          -o APT::FTPArchive::Release::Label=DozenOS \
@@ -228,6 +267,9 @@ log "ephemeral apt repo ready: $out_dir ($stanza_count package(s), suite=$suite 
 log "full apt source-list lines this repo supports:"
 log "  deb     $mirror_value $suite $component"
 log "  deb-src $mirror_value $suite $component"
-log "value for build-dozenos-image --dozenos-mirror (also printed on stdout):"
+log "WARNING: this file:// value is NOT visible to apt inside a live-build"
+log "WARNING: chroot (lb build) -- serve $out_dir over localhost HTTP and use"
+log "WARNING: [trusted=yes] http://127.0.0.1:<port> there instead (see header)."
+log "file:// value (also printed on stdout):"
 
 printf '%s\n' "$mirror_value"
