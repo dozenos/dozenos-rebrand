@@ -136,7 +136,7 @@ this toolkit's `dozenos-rebrand/*` scripts exist to prevent. Instead:
    `dozenos-rebrand/`, pinned to `@@REBRAND_REF@@` (currently `main` — see
    §6's roll-out note on why this is not yet load-bearing).
 5. **Fail loud if `UPSTREAM_URL` is unset** — a dedicated step that reads the
-   secret into an env var and `exit 1`s with a `::error::` annotation before
+   variable into an env var and `exit 1`s with a `::error::` annotation before
    anything else runs, rather than letting `mirror-push.sh` fail confusingly
    on an empty first argument.
 6. **`gh auth setup-git`** (using the job's own `github.token`) so
@@ -167,19 +167,22 @@ this toolkit's `dozenos-rebrand/*` scripts exist to prevent. Instead:
    `package.toml`'s actual build inputs, beyond the bootstrap edge set item
    #15 shipped) is item #16's follow-on, not item #14's.
 
-## 5. `UPSTREAM_URL` secret contract
+## 5. `UPSTREAM_URL` variable contract
 
 - **Per-repo, not org-level** — the one deliberate exception to
-  `CI-SECRETS.md`'s otherwise-all-org-level secrets. Each of the 17 mirrors
-  gets its OWN `UPSTREAM_URL` repository secret
-  (`github.com/dozenos/<name>/settings/secrets/actions`), holding that one
+  `CI-SECRETS.md`'s otherwise-all-org-level config. Each of the 17 mirrors
+  gets its OWN `UPSTREAM_URL` repository **variable**
+  (`github.com/dozenos/<name>/settings/variables/actions`), holding that one
   repo's `https://github.com/vyos/<name>` mapping.
-- **The only vyos residual, and only at runtime.** It never appears in the
-  mirror's tree, in `mirror-push.sh`, in `sync.yml.template`, or in the
-  generated `sync.yml` — only as `${{ secrets.UPSTREAM_URL }}`, resolved by
-  GitHub at job-run time and never echoed to a log (GitHub's own secret
-  masking covers it once it is registered as a secret).
-- See `CI-SECRETS.md` §5 for the full per-repo secret table entry and
+- **A variable, not a secret** — the value is a plain public
+  `github.com/vyos/<name>` URL with nothing sensitive in it, so it is an
+  Actions *variable*, not a *secret* (migrated 2026-07-08). It is the only
+  `vyos` residual, and only at runtime: it never appears in the mirror's
+  tree, in `mirror-push.sh`, in `sync.yml.template`, or in the generated
+  `sync.yml` — only as `${{ vars.UPSTREAM_URL }}`, resolved by GitHub at
+  job-run time. Being a variable, GitHub does not mask it in logs; that is
+  intentional and harmless (the mapping is public knowledge).
+- See `CI-SECRETS.md` §5 for the full per-repo variable table entry and
   verification checklist addition.
 
 ## 6. Roll-out plan (NOT done this cycle)

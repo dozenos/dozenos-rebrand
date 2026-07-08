@@ -15,13 +15,13 @@
 #
 # DECENTRALIZED design (item #14, LOCKED -- see dozenos-rebrand/SYNC.md):
 # this repo syncs ITSELF, daily, from its own upstream mapping (the
-# `UPSTREAM_URL` secret configured on THIS repo only -- see
+# `UPSTREAM_URL` variable configured on THIS repo only -- see
 # dozenos-rebrand/CI-SECRETS.md). There is NO central sync loop anywhere;
 # each of the dozenos/* mirrors carries its own independent copy of this
 # workflow, baked with ITS OWN mirror-push.sh flags below. This copy's baked
 # invocation reproduces the exact `mirror-push.sh` call that produced this
 # very mirror (minus the upstream URL itself, which never appears in the
-# mirror tree -- only in the per-repo secret).
+# mirror tree -- only in the per-repo variable).
 #
 # Baked mirror-push.sh flags for this repo: @@MIRROR_PUSH_FLAGS_COMMENT@@
 name: DozenOS self-sync
@@ -59,13 +59,13 @@ jobs:
           ref: @@REBRAND_REF@@
           path: dozenos-rebrand
 
-      - name: Verify UPSTREAM_URL secret is set
+      - name: Verify UPSTREAM_URL variable is set
         env:
-          UPSTREAM_URL: ${{ secrets.UPSTREAM_URL }}
+          UPSTREAM_URL: ${{ vars.UPSTREAM_URL }}
         run: |
           set -euo pipefail
           if [ -z "$UPSTREAM_URL" ]; then
-            echo "::error::UPSTREAM_URL secret is not set on this repo -- see dozenos-rebrand/CI-SECRETS.md (per-repo secret holding this repo's upstream mirror-source URL)" >&2
+            echo "::error::UPSTREAM_URL variable is not set on this repo -- see dozenos-rebrand/CI-SECRETS.md (per-repo variable holding this repo's upstream mirror-source URL)" >&2
             exit 1
           fi
 
@@ -94,7 +94,7 @@ jobs:
       - name: Run mirror-push.sh (self-sync)
         id: mirror_push
         env:
-          UPSTREAM_URL: ${{ secrets.UPSTREAM_URL }}
+          UPSTREAM_URL: ${{ vars.UPSTREAM_URL }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
