@@ -49,6 +49,10 @@ on:
     paths:
       - 'scripts/package-build/**'
       - '!scripts/package-build/linux-kernel/**'
+      # shim-signed is never auto-built here -- see the discover step's
+      # exclusion comment and dozenos-rebrand/SB-SIGNING.md (the ISO uses
+      # Debian's stock shim-signed; the DozenOS-CA shim chain is out of scope).
+      - '!scripts/package-build/shim-signed/**'
   workflow_dispatch:
     inputs:
       package_name:
@@ -76,16 +80,25 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # linux-kernel and shim-signed are both excluded from the matrix:
+          # linux-kernel has its own bespoke multi-package build.py (never a
+          # single matrix leg here), and shim-signed can never build in this
+          # pipeline -- its Build-Depends pins `shim-unsigned (= <ver>+dozenos1)`,
+          # a Secure Boot shim DozenOS deliberately does NOT rebuild (the ISO
+          # uses Debian's stock shim-signed instead; see
+          # dozenos-rebrand/SB-SIGNING.md). The recipe dir stays in-tree for
+          # 1:1 upstream mirror parity but is not auto-built.
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ inputs.package_name }}" ]; then
             packages=$(jq -cn --arg p "${{ inputs.package_name }}" '[$p]')
           elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            packages=$(find scripts/package-build -mindepth 1 -maxdepth 1 -type d ! -name linux-kernel -printf '%f\n' \
+            packages=$(find scripts/package-build -mindepth 1 -maxdepth 1 -type d \
+              ! -name linux-kernel ! -name shim-signed -printf '%f\n' \
               | sort | jq -R . | jq -sc .)
           else
             before="${{ github.event.before }}"
             after="${{ github.event.after }}"
             changed=$(git diff --name-only "$before" "$after" -- scripts/package-build/ \
-              | awk -F/ '{print $2}' | sort -u | grep -vx linux-kernel || true)
+              | awk -F/ '{print $3}' | sort -u | grep -vxE 'linux-kernel|shim-signed' || true)
             packages=$(printf '%s\n' "$changed" | jq -R . | jq -sc 'map(select(length > 0))')
           fi
           echo "packages=$packages" >> "$GITHUB_OUTPUT"

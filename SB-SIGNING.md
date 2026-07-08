@@ -434,6 +434,14 @@ so it was deliberately not added.
 
 ### 9.5 CI wiring
 
+> **⚠️ SUPERSEDED by §9.7 (2026-07-08).** The claim below that `shim-signed`
+> "is built as an ordinary C2 package by `rebuild-packages.yml`" is **wrong**
+> and was disproven by the first full CI run: `shim-signed` **cannot** build
+> in this pipeline and is now **excluded** from the auto-build matrix. The
+> `.der` MOK-enrollment mechanics in §9.3 (and the §9.2 trust flow) remain
+> correct and unaffected — those never depended on rebuilding `shim-signed`.
+> Read §9.7 for the empirical finding and the decision.
+
 No new CI step. `shim-signed` is built as an ordinary C2 package by
 `rebuild-packages.yml`, at package-build time — and, per §9.1, that build
 never touches a cert. The `.der` is a **shipped-image-time** artifact
@@ -482,3 +490,104 @@ no real key, no real build):
   + real firmware + real key, entirely out of scope for a toolkit-repo
   audit. Tracked as item #13's eventual boot-test responsibility (§7's
   checklist already names this).
+
+### 9.7 CORRECTION (2026-07-08): `shim-signed` does NOT build here — ISO uses Debian's stock shim-signed
+
+The first full CI run of `rebuild-packages.yml` / the nightly `build-packages`
+matrix **disproved §9.1/§9.5's assumption** that `shim-signed` builds as an
+ordinary, cert-free C2 package. It does not, and cannot, in this pipeline.
+
+**Empirical failure.** The `shim-signed` matrix leg fails 100% of the time at
+`mk-build-deps`:
+
+```
+The following packages will be REMOVED: shim-signed-build-deps
+mk-build-deps: Unable to install shim-signed-build-deps at /usr/bin/mk-build-deps line 459
+```
+
+**Root cause.** The mirrored `dozenos/shim-signed` `debian/control` pins an
+**exact-versioned** build dependency (four-form-transformed from upstream
+`+vyos1`):
+
+```
+Build-Depends: debhelper (>= 13),
+ shim-unsigned (= 16.0-1+dozenos1),          # <-- exact version, NOT in Debian
+ shim-helpers-amd64-signed [amd64],
+ sbsigntool (>= 0.9.2-2), po-debconf, debhelper-compat (= 13), python3-cryptography,
+```
+
+`debian/rules` then version-stamps the output from whatever `shim-unsigned` is
+*installed* at build time: `dh_gencontrol -- -v$(VERSION)+$(SHIM_VERSION)`
+where `SHIM_VERSION := dpkg-query -W shim-unsigned` — which is why the shipped
+VyOS package reads `shim-signed 1.50+vyos1+16.0-1+vyos1` (confirmed against a
+running VyOS system's `dpkg -l`, alongside `shim-unsigned 16.0-1+vyos1`).
+
+The `16.0-1+vyos1` / `16.0-1+dozenos1` shim-unsigned does **not** exist in the
+Debian archive (Debian ships only stock `16.0-1`), and the DozenOS build
+container deliberately configures **no** VyOS/DozenOS apt source (zero-vyos),
+so `apt-get`/`mk-build-deps` can never satisfy the exact pin → the whole
+build-deps package is rolled back → the recipe fails. This is precisely the
+resolution §9.6 flagged as unverified ("that Debian's `shim-helpers-amd64-signed`
+dependency resolves cleanly in the real build container") — it does not.
+
+**Where `+vyos1` shim-unsigned actually comes from.** VyOS builds it from a
+**separate source repo, `vyos/efi-boot-shim`** (`Source: shim`, branch
+`rolling`) — a fork of Debian's `shim` source. Its `debian/rules` bakes a
+vendor UEFI CA into shim's built-in trust DB:
+
+```
+cert=debian/debian-vyos-uefi-ca.esl        # VyOS's own UEFI CA (an ESL blob)
+distributor=vyos
+... VENDOR_DB_FILE=$(cert) ...             # embeds the CA as shim's trusted db
+```
+
+(changelog: *"Add VyOS's CA alongside Debian's."*). It also has a third-party
+`gnu-efi` git submodule (`github.com/rhboot/gnu-efi`, branch `shim-16.0`) that
+`build.py`'s plain `git clone` would not fetch. VyOS builds this out of band
+and hosts the resulting `shim-unsigned` in its apt repo; `shim-signed` then
+`apt-get install`s it and repackages Debian's Microsoft-signed shim EFI around
+it. `dozenos/efi-boot-shim` is **not mirrored**.
+
+**DECISION (user, 2026-07-08): the DozenOS ISO consumes Debian's own stock,
+Microsoft-signed `shim-signed` from the Debian archive.** DozenOS does **not**
+mirror `efi-boot-shim`, does not rebuild `shim-unsigned`, and does not build a
+DozenOS-CA shim. Rationale:
+
+- Building a DozenOS-CA shim would require mirroring `efi-boot-shim` (with the
+  `gnu-efi` submodule), replacing the embedded `debian-vyos-uefi-ca.esl` with
+  a **DozenOS** UEFI CA ESL (the *public* part of the MOK cert, derivable from
+  `MOK_SIGNING_CERT` via `cert-to-efi-sig-list` — no private key, but it must
+  be available at *shim*-build time, which the current matrix does not inject),
+  a new `shim`/`efi-boot-shim` recipe, and build **ordering** (shim-unsigned
+  before shim-signed, which the parallel matrix does not provide). Significant
+  scope for a nightly-CI feature that Secure Boot does not strictly need.
+- Debian's stock `shim-signed` is Microsoft-signed and boots under Secure Boot
+  on any UEFI machine. The DozenOS kernel remains MOK-signed (§1/§3) and the
+  **§9.2 trust flow is unchanged**: shim → (kernel not trusted by built-in db)
+  → enrolled MOK (`dozenos-dev-2025-shim.der`, §9.3) → kernel verifies → boot.
+  The only thing lost vs. VyOS is the *built-in* DozenOS CA that would let a
+  DozenOS kernel boot **without** the one-time `MokManager` enrollment step.
+
+**Implementation.** `shim-signed` is excluded from the auto-build matrix in
+both places that enumerate recipes, matching how `linux-kernel` is special-cased:
+
+- `overlay/new-files/.github/workflows/rebuild-packages.yml` — the `discover`
+  step's `workflow_dispatch` `find` (`! -name shim-signed`), its push-path
+  `git diff | grep -vxE 'linux-kernel|shim-signed'`, and the `on: push:`
+  `paths:` filter (`'!scripts/package-build/shim-signed/**'`).
+- `dozenos-nightly-build/.github/workflows/nightly.yml` — the `discover`
+  step's `find` (`! -name shim-signed`).
+
+The `scripts/package-build/shim-signed/` recipe dir **stays in-tree** for 1:1
+upstream mirror parity; it is simply never auto-built. Excluding it also
+unblocks the nightly's strict `build-iso: needs: [set-version, build-packages]`
+gate — any single failing matrix leg marks `build-packages` failed and skips
+`build-iso`, so a permanently-failing `shim-signed` would block every nightly.
+
+**Future work (if a DozenOS-CA Secure Boot flavor is ever wanted).** Mirror
+`vyos/efi-boot-shim` → `dozenos/efi-boot-shim` (recurse the `gnu-efi`
+submodule), overlay-replace `debian-vyos-uefi-ca.esl` with a DozenOS UEFI CA
+ESL generated from `MOK_SIGNING_CERT`, add an `efi-boot-shim` recipe that
+builds `shim-unsigned+dozenos1`, make `MOK_SIGNING_CERT` available at that
+build step, and order it before `shim-signed`. Tracked here so it is not
+re-discovered from scratch.
