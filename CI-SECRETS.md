@@ -192,8 +192,9 @@ token-minting repos (19 mirrors + `dozenos-nightly-build`). The App
 depends on it, and installation grants nothing to a repo's own workflows
 without the private key.
 
-⚠️ **Workflows: Read/Write permission REQUIRED (user action, pending
-2026-07-09):** the mirror self-push moved off `github.token` onto an
+**Workflows: Read/Write permission (GRANTED by user 2026-07-09, verified
+via `gh api orgs/dozenos/installations` → `permissions.workflows:
+"write"`):** the mirror self-push moved off `github.token` onto an
 App-minted token (`sync.yml.template`'s "Mint GitHub App token
 (self-push)" step) because `GITHUB_TOKEN` categorically cannot create or
 update `.github/workflows/*` files — first hit 2026-07-09 when the
@@ -201,12 +202,11 @@ deb-cache change to `rebuild-dispatch.yml` made `dozenos-build`'s
 self-sync push a changed workflow file (`! [remote rejected] ... without
 "workflows" permission`); every earlier sync passed only because the
 regenerated workflow files were byte-identical. The App token inherits
-the App's permissions, so the App must additionally grant **Workflows:
-Read and write** (App settings → Permissions → Repository permissions →
-Workflows; then approve the permission-update prompt on the org
-installation). Until that is granted, a self-sync push still fails
-WHENEVER a workflow file's content actually changes (template/overlay
-churn) — steady-state byte-identical syncs are unaffected.
+the App's permissions, so the App additionally grants **Workflows: Read
+and write** — this is what lets a self-sync propagate template/overlay
+workflow-content changes; if this permission is ever revoked, self-syncs
+fail again whenever a workflow file's content actually changes
+(byte-identical steady-state syncs would still pass).
 
 ---
 
