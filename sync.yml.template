@@ -105,7 +105,7 @@ jobs:
         id: push_token
         uses: actions/create-github-app-token@v3
         with:
-          app-id: ${{ vars.BUILD_APP_ID }}
+          client-id: ${{ vars.BUILD_APP_ID }}
           private-key: ${{ secrets.BUILD_APP_PRIVATE_KEY }}
           owner: dozenos
           repositories: ${{ env.REPO_NAME }}
@@ -156,7 +156,7 @@ jobs:
         if: steps.mirror_push.outputs.changed == 'true'
         uses: actions/create-github-app-token@v3
         with:
-          app-id: ${{ vars.BUILD_APP_ID }}
+          client-id: ${{ vars.BUILD_APP_ID }}
           private-key: ${{ secrets.BUILD_APP_PRIVATE_KEY }}
           owner: dozenos
           repositories: dozenos-build,dozenos-nightly-build

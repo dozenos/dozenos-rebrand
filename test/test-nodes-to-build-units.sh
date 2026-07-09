@@ -338,8 +338,17 @@ fi
 rm -f /tmp/rebuild-dispatch.yamlerr.$$
 
 echo "== [26] rebuild-dispatch.yml: actionlint =="
+# -ignore x2: actionlint's VENDORED popular-actions input schema (still
+# app-id-only as of v1.7.12) lags actions/create-github-app-token@v3, whose
+# real action.yml (checked at the v3 TAG, 2026-07-09) defines `client-id`
+# and deprecates `app-id` ("Use 'client-id' instead" -- the runtime warning
+# that prompted the rename). Both ignores match ONLY that stale-schema false
+# positive; drop them once a future actionlint release refreshes its DB.
 if command -v actionlint >/dev/null 2>&1; then
-  if actionlint "$WORKFLOW" >/tmp/rebuild-dispatch.actionlint.$$ 2>&1; then
+  if actionlint \
+      -ignore 'input "client-id" is not defined in action' \
+      -ignore 'missing input "app-id" which is required' \
+      "$WORKFLOW" >/tmp/rebuild-dispatch.actionlint.$$ 2>&1; then
     ok "rebuild-dispatch.yml: actionlint clean"
   else
     bad "rebuild-dispatch.yml: actionlint findings -- $(cat /tmp/rebuild-dispatch.actionlint.$$)"

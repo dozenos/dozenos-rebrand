@@ -155,7 +155,7 @@ jobs:
         id: app_token
         uses: actions/create-github-app-token@v3
         with:
-          app-id: ${{ vars.BUILD_APP_ID }}
+          client-id: ${{ vars.BUILD_APP_ID }}
           private-key: ${{ secrets.BUILD_APP_PRIVATE_KEY }}
           owner: dozenos
           repositories: dozenos-rebrand
@@ -226,7 +226,7 @@ jobs:
         id: app_token
         uses: actions/create-github-app-token@v3
         with:
-          app-id: ${{ vars.BUILD_APP_ID }}
+          client-id: ${{ vars.BUILD_APP_ID }}
           private-key: ${{ secrets.BUILD_APP_PRIVATE_KEY }}
           owner: dozenos
           repositories: dozenos-rebrand
@@ -343,7 +343,7 @@ jobs:
         continue-on-error: true
         uses: actions/create-github-app-token@v3
         with:
-          app-id: ${{ vars.BUILD_APP_ID }}
+          client-id: ${{ vars.BUILD_APP_ID }}
           private-key: ${{ secrets.BUILD_APP_PRIVATE_KEY }}
           owner: dozenos
           repositories: dozenos-deb-cache
@@ -411,7 +411,7 @@ jobs:
         continue-on-error: true
         uses: actions/create-github-app-token@v3
         with:
-          app-id: ${{ vars.BUILD_APP_ID }}
+          client-id: ${{ vars.BUILD_APP_ID }}
           private-key: ${{ secrets.BUILD_APP_PRIVATE_KEY }}
           owner: dozenos
           repositories: dozenos-nightly-build
