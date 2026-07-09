@@ -131,7 +131,7 @@ jobs:
       # that absolute path.
       - name: Mint GitHub App token (dozenos-rebrand checkout)
         id: app_token
-        uses: actions/create-github-app-token@v2
+        uses: actions/create-github-app-token@v3
         with:
           app-id: ${{ vars.BUILD_APP_ID }}
           private-key: ${{ secrets.BUILD_APP_PRIVATE_KEY }}

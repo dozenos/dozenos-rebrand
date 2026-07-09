@@ -249,7 +249,7 @@ itself.
 - Job C adds `actions: write` (job-level only) — required for
   `gh workflow run` against this same repo.
 - Runtime-minted org GitHub App tokens (`vars.BUILD_APP_ID` +
-  `secrets.BUILD_APP_PRIVATE_KEY` via `actions/create-github-app-token@v2`,
+  `secrets.BUILD_APP_PRIVATE_KEY` via `actions/create-github-app-token@v3`,
   one mint step at the start of each consuming job, `repositories:` narrowed
   to that job's targets — see `CI-SECRETS.md` §4) used for: checking out
   `dozenos/dozenos-rebrand` (jobs A and B, same reason every other item #8
