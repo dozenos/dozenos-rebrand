@@ -46,10 +46,15 @@
 #    package wins) into `dozenos-debs/`. The ISO-build step then mounts that
 #    directory into the container read-only and, only if it actually found
 #    any `.deb`, calls `release/make-ephemeral-apt-repo.sh` *inside* the
-#    same container invocation that runs `build-dozenos-image` (so the
-#    `file://` path it emits is already correct from the container's own
-#    point of view -- no host/container path translation needed) to build
-#    the repo and pass its `--dozenos-mirror` value through. When nothing
+#    same container invocation that runs `build-dozenos-image`, then serves
+#    the repo over localhost HTTP (127.0.0.1:8099) and passes THAT as
+#    `--dozenos-mirror` -- never the script's own `file://` stdout value:
+#    apt runs inside the live-build chroot, whose filesystem root does not
+#    contain the container's /tmp, so a file:// repo 404s on every index
+#    fetch there (apt Ign-s the missing Packages index but HARD-FAILS
+#    `lb build` on the missing Sources index). Same mechanism as
+#    dozenos-nightly-build's nightly.yml build-image step; see
+#    make-ephemeral-apt-repo.sh's own CONSUMPTION WARNING. When nothing
 #    was found (e.g. first bring-up, before any `rebuild-packages.yml` run
 #    has ever succeeded), `--dozenos-mirror ""` is used, identical to
 #    today's behavior. See ../../../ISO-BUILD.md for the full mechanism and
@@ -184,15 +189,23 @@ jobs:
       # Item #13 (../../../ISO-BUILD.md): builds the ephemeral apt repo
       # *inside* this same container invocation, right before
       # build-dozenos-image runs, from whatever "Fetch recently built
-      # DozenOS packages" above found (possibly nothing). Doing it in-container
-      # (rather than on the runner host beforehand) means
-      # release/make-ephemeral-apt-repo.sh's own `file://<output-dir>` value
-      # is already correct from build-dozenos-image's point of view with no
-      # host-vs-container path translation -- both it and build-dozenos-image
-      # run in the same mount namespace. /dozenos-debs is always mounted
-      # (read-only) even when empty, so this never errors on a missing
-      # source path; DOZENOS_MIRROR simply stays "" (identical to today's
-      # behavior) when no .deb was found.
+      # DozenOS packages" above found (possibly nothing) -- and serves it
+      # over localhost HTTP, NOT via its file:// URL. apt runs INSIDE the
+      # live-build chroot (build/chroot/), whose filesystem root does not
+      # contain the container's /tmp: a container-side file:// path 404s on
+      # every index fetch there (apt merely Ign-s the missing Packages
+      # index but HARD-FAILS `lb build` on the missing Sources index -- and
+      # even past that, every DozenOS package install would fail). The
+      # chroot DOES share the container network namespace, so a
+      # 127.0.0.1-bound server in the container is reachable from chroot
+      # apt at every stage that needs it. Identical mechanism to
+      # dozenos-nightly-build's nightly.yml build-image step (where the
+      # file:// failure was first hit and fixed, 2026-07-08 -- see
+      # make-ephemeral-apt-repo.sh's CONSUMPTION WARNING; this workflow
+      # kept the pre-fix file:// consumption until 2026-07-09).
+      # /dozenos-debs is always mounted (read-only) even when empty, so
+      # this never errors on a missing source path; DOZENOS_MIRROR simply
+      # stays "" (identical to today's behavior) when no .deb was found.
       - name: Build custom ISO image
         run: |
           docker run --rm \
@@ -210,8 +223,22 @@ jobs:
               set -euo pipefail
               DOZENOS_MIRROR=""
               if [ -n "$(find /dozenos-debs -name "*.deb" -print -quit 2>/dev/null)" ]; then
-                DOZENOS_MIRROR=$(/dozenos-rebrand/release/make-ephemeral-apt-repo.sh /dozenos-debs /tmp/dozenos-apt-repo)
-                echo "I: ephemeral DozenOS apt repo built -- --dozenos-mirror \"$DOZENOS_MIRROR\""
+                /dozenos-rebrand/release/make-ephemeral-apt-repo.sh /dozenos-debs /tmp/dozenos-apt-repo >/dev/null
+                # Serve the repo over localhost HTTP -- see this step-s
+                # header comment for why file:// cannot work here (the
+                # hyphen is deliberate, an apostrophe would end this
+                # single-quoted bash -c block). Readiness is verified
+                # before lb build starts; the server dies with the
+                # container at step end. If it ever died mid-build, apt
+                # would fail the job loudly rather than build a wrong ISO.
+                (cd /tmp/dozenos-apt-repo && exec python3 -m http.server --bind 127.0.0.1 8099 >/tmp/dozenos-apt-http.log 2>&1) &
+                for i in $(seq 1 50); do
+                  curl -fsS -o /dev/null http://127.0.0.1:8099/dists/rolling/Release && break
+                  sleep 0.2
+                done
+                curl -fsS -o /dev/null http://127.0.0.1:8099/dists/rolling/Release || { echo "E: ephemeral apt repo HTTP server did not come up"; exit 1; }
+                DOZENOS_MIRROR="[trusted=yes] http://127.0.0.1:8099"
+                echo "I: ephemeral DozenOS apt repo built + served -- --dozenos-mirror \"$DOZENOS_MIRROR\""
               else
                 echo "I: no previously built DozenOS packages available -- building with an empty --dozenos-mirror (same as before item #13)"
               fi

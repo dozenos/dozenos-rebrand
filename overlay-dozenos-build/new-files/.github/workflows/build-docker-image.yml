@@ -26,13 +26,19 @@ on:
     paths:
       - 'docker/**'
   schedule:
-    # Weekly base-image refresh (Mon 04:00 UTC) so the build container keeps
+    # Weekly base-image refresh (Mon 02:00 UTC) so the build container keeps
     # up with upstream docker/ changes + Debian base-image security updates
     # even in a week with no docker/** push. Downstream builds are NOT
     # auto-triggered from here (they have their own schedules / manual
     # dispatch) -- this only keeps the ghcr.io/dozenos/dozenos-build:rolling
-    # image itself fresh.
-    - cron: '0 4 * * 1'
+    # image itself fresh. 02:00 deliberately sits >2h BEFORE
+    # dozenos-nightly-build's weekly heartbeat cron ('17 4 * * 1') so the
+    # refreshed image is already pushed when the heartbeat pulls :rolling
+    # (it was 04:00 until 2026-07-09, racing the 04:17 heartbeat -- a
+    # build+push slower than 17 minutes handed that week's heartbeat the
+    # previous week's image), and also clear of the mirrors' shared
+    # 03:17 self-sync cron.
+    - cron: '0 2 * * 1'
   workflow_dispatch: {}
 
 permissions:
