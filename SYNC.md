@@ -56,6 +56,17 @@ this toolkit's `dozenos-rebrand/*` scripts exist to prevent. Instead:
   | Plain mirror | `hvinfo` | *(empty)* |
   | Build repo | `dozenos-build` | `--build-repo` |
   | Overlay repo | `dozenos-1x` | `--overlay dozenos-rebrand/overlay-dozenos-1x --allow-residuals` |
+  | Overlay repo | `vyconf` | `--overlay dozenos-rebrand/overlay-vyconf` |
+
+  ⚠️ **This table is the authoritative flag list for ANY re-push/rollout of
+  a mirror** — a re-push that drops a target's overlay flag ships an
+  un-overlaid tree AND bakes overlay-less flags into that mirror's own
+  sync.yml, so every subsequent self-sync keeps stomping the overlay's
+  fixes. This actually happened (2026-07-09): `vyconf` was rolled out and
+  later re-pushed as a plain mirror, so its daily self-sync reverted
+  `overlay-vyconf`'s ocaml-protoc `>= 3.0` pin fix back to upstream's
+  broken `< 3.0`, failing every dozenos-1x build until re-pushed WITH
+  `--overlay dozenos-rebrand/overlay-vyconf`.
 
   `--build-repo` already implies `--allow-residuals` inside `mirror-push.sh`
   (see its existing comment on that), so a build-repo target's baked flags
