@@ -4,7 +4,7 @@
 # scripts/image-build/build-dozenos-image (post-rename path; the entrypoint's
 # own filename rename `build-vyos-image` -> `build-dozenos-image` is handled
 # automatically by rename-transform.sh's four-form pass -- see audit item #18
-# / overlay/MANIFEST.md's "ACCEPTED" decision -- this script only adds logic,
+# / overlay-dozenos-build/MANIFEST.md's "ACCEPTED" decision -- this script only adds logic,
 # it never touches the rename itself).
 #
 # WHY (audit item #13): upstream vyos-build's `build-vyos-image` writes the
@@ -72,7 +72,7 @@ with open(path, "r") as fh:
 
 # Exact unconditional block emitted by a fresh rename-transform.sh pass
 # (verified by simulating the transform against pristine upstream content --
-# see dozenos-rebrand/overlay/MANIFEST.md item #13). Matched with the
+# see dozenos-rebrand/overlay-dozenos-build/MANIFEST.md item #13). Matched with the
 # original indentation (8 spaces) preserved via the capture group.
 old_block = (
     "        # Add the additional repositories to package lists\n"

@@ -6,8 +6,8 @@ Per-repo overlay for `github.com/dozenos/dozenos-1x`, applied by
 `rename-transform.sh --verify` + push. See `apply-overlay.sh`'s own header
 for the exact pipeline position and the `mirror-push.sh` command line.
 
-This is a **separate** overlay from `../overlay/` (the vyos-build overlay).
-`../overlay/`'s own MANIFEST.md flagged, but deliberately left out of scope,
+This is a **separate** overlay from `../overlay-dozenos-build/` (the vyos-build overlay).
+`../overlay-dozenos-build/`'s own MANIFEST.md flagged, but deliberately left out of scope,
 three vyos-1x-internal items -- see "Per-repo overlay split" there. This
 directory is where those items were resolved.
 
@@ -33,7 +33,7 @@ through the four-form transform (and the zero-`vyos` `--verify` gate)
 completely untouched. Left alone, the shipped default credential would
 still functionally be `vyos`, even though every visible string says
 `dozenos`. This is the general "value, not string" landmine class (see
-`../LANDMINES.md` and `../overlay/README.md`): no textual substitution can
+`../LANDMINES.md` and `../overlay-dozenos-build/README.md`): no textual substitution can
 turn one password's hash into a different password's hash.
 
 `value-fixes/regen-default-password-hash.sh` regenerates the hash for the
@@ -88,7 +88,7 @@ are permanent non-mirrored targets, not a temporary pre-push-order gap).
 
 ## What's deliberately NOT here (and why)
 
-Three vyos-1x-internal items were flagged by `../overlay/MANIFEST.md`'s
+Three vyos-1x-internal items were flagged by `../overlay-dozenos-build/MANIFEST.md`'s
 "Per-repo overlay split" as belonging to *this* future overlay. Only one
 (the password hash, above) turned out to actually need an overlay entry
 under mode B. All three were re-verified from scratch against a fresh

@@ -10,11 +10,11 @@
 # DER/base64 body is unaffected content -- it is still, literally, VyOS's
 # real Secure Boot signing cert, just under a renamed filename. That is a
 # value-not-string problem the four-form transform structurally cannot fix
-# (per overlay/README.md's own definition of what belongs in value-fixes/):
+# (per overlay-dozenos-build/README.md's own definition of what belongs in value-fixes/):
 # no textual substitution turns someone else's real certificate into ours.
 #
 # DECISION (already made, see data/certificates/README.md, shipped via
-# overlay/new-files/): do not fabricate or ship a placeholder cert. Delete
+# overlay-dozenos-build/new-files/): do not fabricate or ship a placeholder cert. Delete
 # the inherited VyOS cert entirely; the real DozenOS enrollment cert is
 # injected at CI build time from the org secret `MOK_SIGNING_CERT` (Phase 4).
 # Local/dev builds simply ship an empty data/certificates/ (README +

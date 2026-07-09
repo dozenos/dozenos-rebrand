@@ -5,7 +5,7 @@ DozenOS-built `.deb` packages it needs, given the locked "no public apt
 mirror" decision (`DISTRIBUTION.md` §1), and how that combines with Secure
 Boot MOK signing (`SB-SIGNING.md`) to produce a signed, SB-capable ISO. This
 document is the toolkit-side record for `release/make-ephemeral-apt-repo.sh`
-and the CI wiring in `overlay/new-files/.github/workflows/package-smoketest.yml`.
+and the CI wiring in `overlay-dozenos-build/new-files/.github/workflows/package-smoketest.yml`.
 Cross-references: `DISTRIBUTION.md` (#9, artifact tiers this item consumes),
 `SB-SIGNING.md` (#10/#11, MOK signing this item's ISO build already carries),
 `MLNX-AND-DWARF.md` (#12/#25, the neutral `/dozenos` mount this item's builds
@@ -98,7 +98,7 @@ dozenos-rebrand/mirror-push.sh https://github.com/vyos/vyos-build.git \
 
 (clone @ upstream `fce9b6d` → `rename-transform.sh` → `.github/` strip →
 `wire-prebuild-hooks.sh` → `apply-overlay.sh --ci` → `--verify`: 9 residuals,
-all pre-known build-time pointers, matching `overlay/MANIFEST.md` exactly —
+all pre-known build-time pointers, matching `overlay-dozenos-build/MANIFEST.md` exactly —
 no drift from this item's changes). Read the reproduced clone's
 `scripts/image-build/build-dozenos-image` directly (not assumed from
 upstream docs): the CLI option is registered as
@@ -124,8 +124,8 @@ else:
 ```
 
 (`build-dozenos-image:530-544`; the `if`/`else` guard is
-`overlay/logic-patches/vyos-mirror-guard.sh`'s "KEEP the guard" decision,
-already landed — see `overlay/MANIFEST.md`'s logic-patches section. Verified
+`overlay-dozenos-build/logic-patches/vyos-mirror-guard.sh`'s "KEEP the guard" decision,
+already landed — see `overlay-dozenos-build/MANIFEST.md`'s logic-patches section. Verified
 still present, byte-identical, in this item's reproduced clone.)
 
 Three consequences, all verified by reading the script (not guessed):
@@ -284,7 +284,7 @@ is valid in a step-level `if:` in real GitHub Actions; `actionlint` is
 conservative here without a config file naming known secrets. Not
 introduced or worsened by this item. Full mode-B reproduction re-run after
 these changes: still exactly 9 residual `vyos` hits (unchanged from
-`overlay/MANIFEST.md`'s baseline), and the reproduced clone's
+`overlay-dozenos-build/MANIFEST.md`'s baseline), and the reproduced clone's
 `package-smoketest.yml` is byte-identical to the overlay source. `zero-vyos`
 grep (`grep -ni vyos`) and `uses:.*vyos` grep: both clean on the modified
 file.

@@ -3,7 +3,7 @@
 # regen-default-password-hash.sh -- replace the inherited VyOS default-login
 # SHA-512 crypt hash with a freshly generated hash of the new default
 # password `dozenos` (dozenos-rebrand/TRANSFORM-COMPLETENESS-AUDIT.md item
-# #8/#23, dozenos-rebrand/overlay/MANIFEST.md's deferred
+# #8/#23, dozenos-rebrand/overlay-dozenos-build/MANIFEST.md's deferred
 # `regen-default-credential.sh` entry -- this script is that deferred work,
 # scoped to the vyos-1x/dozenos-1x repo, see "Per-repo overlay split" there).
 #

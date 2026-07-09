@@ -98,12 +98,12 @@ the source tree — applied as a discrete step *after* `rename-transform.sh`):
 - OVERLAY-LOGIC-PATCH (items #13–#16): a small patch series against specific
   files (`build-vyos-image`, two `package.toml`s' `build_cmd`, Go `PATH`
   exports).
-- Item #18 needs a decision before it can be classified as fold/overlay/accept.
+- Item #18 needs a decision before it can be classified as fold/overlay-dozenos-build/accept.
 
 ## Recommended overlay layout
 
 ```
-dozenos-rebrand/overlay/
+dozenos-rebrand/overlay-dozenos-build/
   README.md          # apply order + when each layer runs relative to rename-transform.sh
   MANIFEST.md         # enumerated source-of-truth: which working-tree path each
                        # overlay artifact will eventually be copied/generated from
@@ -114,8 +114,8 @@ dozenos-rebrand/overlay/
 ```
 
 Apply order for mode-B CI: `git clone` fresh upstream → `rename-transform.sh`
-(+ future `wire-prebuild-hooks.sh`) → `overlay/new-files/` copied on top →
-`overlay/logic-patches/*.patch` applied → `overlay/value-fixes/*` run → build.
+(+ future `wire-prebuild-hooks.sh`) → `overlay-dozenos-build/new-files/` copied on top →
+`overlay-dozenos-build/logic-patches/*.patch` applied → `overlay-dozenos-build/value-fixes/*` run → build.
 
 This cycle only creates the skeleton (`README.md` + `MANIFEST.md` + empty
 category dirs) — populating `new-files/`, `value-fixes/`, and
@@ -152,5 +152,5 @@ are follow-on sub-items.
 No network clone, no GitHub repo creation, no push, and no deletion from
 `vyos-build` were performed. All work was read-only inspection of the local
 working tree plus writes confined to `dozenos-rebrand/` (this document and
-the `overlay/` skeleton). `rename-transform.sh` was run only against the
+the `overlay-dozenos-build/` skeleton). `rename-transform.sh` was run only against the
 disposable `<scratch>/up` export, never against the live `vyos-build` tree.

@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 #
-# Integration test for overlay/apply-overlay.sh, focused on the --ci/--local
+# Integration test for overlay-dozenos-build/apply-overlay.sh, focused on the --ci/--local
 # mode split (cicd.note item #18c).
 #
 # Self-contained and NETWORK-FREE: builds a synthetic "already-transformed,
 # already-hooked" target tree (the state apply-overlay.sh assumes as input --
-# see its own header / overlay/README.md's pipeline position) covering every
+# see its own header / overlay-dozenos-build/README.md's pipeline position) covering every
 # sub-step it drives, then asserts:
 #
 #   1. --ci (and no-flag, since --ci is the default) leaves all 14 mirrored
@@ -25,8 +25,8 @@ set -uo pipefail
 
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 TOOLKIT=$(dirname "$HERE")
-SCRIPT="$TOOLKIT/overlay/apply-overlay.sh"
-GUARD_SCRIPT="$TOOLKIT/overlay/logic-patches/vyos-mirror-guard.sh"
+SCRIPT="$TOOLKIT/overlay-dozenos-build/apply-overlay.sh"
+GUARD_SCRIPT="$TOOLKIT/overlay-dozenos-build/logic-patches/vyos-mirror-guard.sh"
 
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT

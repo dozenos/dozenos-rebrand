@@ -38,7 +38,7 @@ SCRIPT="$TOOLKIT/dep-graph/nodes-to-build-units.sh"
 VALIDATE="$TOOLKIT/dep-graph/validate-dep-graph.sh"
 GRAPH="$TOOLKIT/dep-graph/dep-graph.json"
 MIRROR_PUSH="$TOOLKIT/mirror-push.sh"
-WORKFLOW="$TOOLKIT/overlay/new-files/.github/workflows/rebuild-dispatch.yml"
+WORKFLOW="$TOOLKIT/overlay-dozenos-build/new-files/.github/workflows/rebuild-dispatch.yml"
 
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
@@ -311,12 +311,12 @@ if [ -d "$VYOS_BUILD_LOCAL/scripts/package-build" ]; then
     esac
     ln -s "$d" "$TREE_FARM/$renamed"
   done
-  # The REAL dozenos-build tree is upstream + overlay/new-files (mirror-push
+  # The REAL dozenos-build tree is upstream + overlay-dozenos-build/new-files (mirror-push
   # --build-repo applies the overlay) -- recipe dirs that exist ONLY as
   # overlay new-files (live-boot, added 2026-07-08; see dep-graph.json's
   # coverage note) are as real to the dep-graph as upstream ones, so the
   # fixture must include them too, not just the vyos-build sibling checkout.
-  for d in "$TOOLKIT"/overlay/new-files/scripts/package-build/*/; do
+  for d in "$TOOLKIT"/overlay-dozenos-build/new-files/scripts/package-build/*/; do
     base=$(basename "$d")
     [ -e "$TREE_FARM/$base" ] || ln -s "$d" "$TREE_FARM/$base"
   done

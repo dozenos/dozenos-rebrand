@@ -17,7 +17,7 @@
 # This is the second step of the mode-B transform pipeline, run immediately
 # after rename-transform.sh itself:
 #   git clone upstream vyos-build  ->  rename-transform.sh <clone>  ->
-#   wire-prebuild-hooks.sh <clone>/scripts/package-build  ->  overlay/*  ->  build
+#   wire-prebuild-hooks.sh <clone>/scripts/package-build  ->  overlay-dozenos-build/*  ->  build
 # Folding it into a companion script (instead of leaving it as ~20 one-off
 # hand edits) makes it survive an upstream sync: new/changed recipes get the
 # hook automatically instead of silently shipping vyos-branded content.
@@ -62,16 +62,16 @@ HOOK_LINE='pre_build_hook = "/dozenos-rebrand/rename-transform.sh ."'
 # look like the C2 zero-vyos mechanism is wired in when it silently is not.
 # Each of its OOT-driver/tarball-fetch recipes already does its own
 # source-transform/fetch handling in its own build-*.sh/build-*.py (see
-# overlay/logic-patches/revert-source-mirror-urls.sh for the one place that
+# overlay-dozenos-build/logic-patches/revert-source-mirror-urls.sh for the one place that
 # needs a value fix, not a hook).
 #
-# Deliberately NOT excluded here (see overlay/MANIFEST.md "wire-prebuild-hooks
+# Deliberately NOT excluded here (see overlay-dozenos-build/MANIFEST.md "wire-prebuild-hooks
 # narrowing" for the full rationale): vyos-1x, libnss-mapuser,
 # libpam-radius-auth, shim-signed, and vpp's "vyos-vpp-patches" block are
 # likewise not part of today's hand-wired set, but for a DIFFERENT reason
 # (their scm_url is a VyOS-maintained helper repo with no dozenos-org mirror
 # yet, an external-state fact that may change -- see
-# overlay/value-fixes/pin-helper-scm-urls.sh) -- nothing about their build
+# overlay-dozenos-build/value-fixes/pin-helper-scm-urls.sh) -- nothing about their build
 # driver makes a pre_build_hook actively wrong the way it is for
 # linux-kernel, so this script does not special-case them; it simply hasn't
 # been asked to touch them because they don't show up with a missing hook in

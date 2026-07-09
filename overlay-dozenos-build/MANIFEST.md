@@ -21,7 +21,7 @@ buildable UNIT via new `../dep-graph/nodes-to-build-units.sh` +
 `dep-graph.json`'s new `build_units` section, not by raw (sometimes
 non-directory) node name — see `../DEP-GRAPH.md`'s "Flagged, not fixed"
 section and `../REBUILD-DISPATCH.md` §11 for the full writeup).
-`overlay/apply-overlay.sh`
+`overlay-dozenos-build/apply-overlay.sh`
 runs all three buckets below, in order, against a tree that already had
 `rename-transform.sh` and `../wire-prebuild-hooks.sh` applied, in either
 `--ci` (default) or `--local` mode — see `README.md`'s "Modes" section for
@@ -35,7 +35,7 @@ header for the exact step order.
 `../dep-graph/validate-dep-graph.sh` (item #16), and the new
 `../dep-graph/nodes-to-build-units.sh` (item #30) are **toolkit
 files that live at the `dozenos-rebrand` root**, checked out cross-repo at
-CI time (`overlay/new-files/.github/workflows/rebuild-dispatch.yml`'s own
+CI time (`overlay-dozenos-build/new-files/.github/workflows/rebuild-dispatch.yml`'s own
 "Checkout dozenos-rebrand" step) — never copied into the shipped
 `dozenos-build` tree. Full spec: `../REBUILD-DISPATCH.md` (item #15's
 receiver design, §11 for item #30's build-unit fix) and `../DEP-GRAPH.md`
@@ -55,12 +55,12 @@ copied-in path).
 
 `../release/gen-version-json.sh` and `../release/sign-and-publish.sh` (item
 #9, release distribution) are **toolkit files that live at the
-`dozenos-rebrand` root**, not under `overlay/new-files/`. Listed here only
+`dozenos-rebrand` root**, not under `overlay-dozenos-build/new-files/`. Listed here only
 for discoverability — full spec is `../DISTRIBUTION.md`. `../release/make-ephemeral-apt-repo.sh`
 (item #13, the ephemeral in-job apt repo consumed by `build-dozenos-image
 --dozenos-mirror`) is the same placement class — a script CI *invokes*, not
 shipped-into-the-tree content — see `../ISO-BUILD.md` for its spec and
-`overlay/new-files/.github/workflows/package-smoketest.yml`'s "adaptation
+`overlay-dozenos-build/new-files/.github/workflows/package-smoketest.yml`'s "adaptation
 #5" for where it is called from.
 
 ## Related, NOT part of this overlay: item #14 self-sync `sync.yml` generation
@@ -73,7 +73,7 @@ content DOES land under `.github/workflows/` on every mirror, same directory
 as this overlay's own `new-files/.github/workflows/` build CI (item #8,
 above), and for `dozenos-build` specifically the two coexist side by side (4
 files: `sync.yml` + the 3 build workflows). But `sync.yml` is **not** part of
-this `overlay/` bucket and is **not** copied in by `apply-overlay.sh` — it is
+this `overlay-dozenos-build/` bucket and is **not** copied in by `apply-overlay.sh` — it is
 generated directly by `mirror-push.sh` itself, unconditionally, for every
 target (plain, `--build-repo`, and `--overlay` alike), as its own pipeline
 step 5/7, independent of whether `apply-overlay.sh` runs at all for that
@@ -97,7 +97,7 @@ item #8 workflows (`rebuild-packages.yml`/`package-smoketest.yml`'s
 mode-B reproduction, not just asserted. Listed here only for
 discoverability, same pattern as the `release/` entry above.
 
-**Why toolkit, not overlay:** everything under `overlay/` is *mirror
+**Why toolkit, not overlay:** everything under `overlay-dozenos-build/` is *mirror
 content* — files this bucket copies **into** a target repo's tree
 (`dozenos-build`, `dozenos-1x`, etc.) so they ship as part of that repo's
 checked-in source. `release/`'s two scripts are the opposite: they are
@@ -106,7 +106,7 @@ checked-in source. `release/`'s two scripts are the opposite: they are
 `dozenos/dozenos-rebrand` (the same repo this MANIFEST lives in — compare
 `rebuild-packages.yml`'s own `Checkout dozenos-rebrand` step, which the
 nightly workflow will do too). They never get copied into `dozenos-build`
-or any other mirrored repo's tree, so `overlay/apply-overlay.sh` correctly
+or any other mirrored repo's tree, so `overlay-dozenos-build/apply-overlay.sh` correctly
 never touches them. Same category as `rename-transform.sh` and
 `wire-prebuild-hooks.sh` (both also toolkit root, both also referenced by
 absolute `/dozenos-rebrand/...` path from inside a build container) — not
@@ -386,7 +386,7 @@ item #18d, see below) and 2 docker/ external hosts would 404 in `--local`
 |---|---|---|
 | `pin-helper-scm-urls.sh` | Revert `scm_url` back to real `github.com/vyos/*` for 14 blocks across 12 files: `libnss-mapuser`, `libpam-radius-auth`, `shim-signed`, `tacacs` (3 blocks: `libtacplus-map`, `libpam-tacplus`, `libnss-tacplus`), `vpp`'s `vyos-vpp-patches`/`dozenos-vpp-patches` block, `dozenos-1x` (the renamed `vyos-1x` recipe dir) — 8 blocks, all rewritten by `rename-transform.sh` — **plus (item #18d)** the 6 `new-files/` recipes that ship pre-pointed at `github.com/dozenos/*` and bypass the transform entirely: `vyatta-bash`, `vyatta-biosdevname`, `vyatta-cfg`, `ipaddrcheck`, `hvinfo`, `dozenos-http-api-tools` (the one name-changing case: `dozenos/dozenos-http-api-tools.git` ↔ `vyos/vyos-http-api-tools.git`). `vpp`'s `name` field and the sibling block's rsync path are correctly left alone — verified by simulating the transform, both consistently read `dozenos-vpp-patches` and need no revert; only the external fetch URL does. **`--local`-mode only (item #18c)**: `apply-overlay.sh` only runs this script in `--local` mode (pre-mirror/offline); in `--ci` mode (the default, and what `mirror-push.sh --build-repo` uses) it is skipped, leaving all 14 scm_urls at `github.com/dozenos/*` since those mirrors already exist by the time `dozenos-build` is pushed. **Contingent, not permanent**: once ALL 14 mirrors exist (they do, as of item #18d), `--local` itself becomes a narrowing pre-mirror/offline-only mode rather than the steady-state default; delete the script/mode split entirely if `--local` is ever no longer needed. | #11, #18d |
 | `pin-toolchain-apt-source.sh` | Revert 2 real external hosts in `docker/`: `docker/dozenos-dev.list`'s `packages.vyos.net` apt-repo host (item #12), and `docker/Dockerfile`'s `cdn.vyos.io` syft-tool download host (~line 336-337). The second one is a **newly-found gap, not in the original audit** — confirmed the live hand-edited tree has *also* not reverted it (`cdn.vyos.io` still present unreverted there), so this was previously undiscovered, not a duplicate of tracked work. | #12 (+ new finding) |
-| `pin-nonmirrored-org-refs.sh` | Revert 3 files' worth of stray `github.com/dozenos/*` refs that the four-form transform correctly produced (pass `--verify` cleanly — no literal `vyos` survives) but that point at repos with no `dozenos` mirror and no mirror plan: `.coderabbit.yaml`'s org-baseline-config link (real upstream: `vyos/coderabbit`), `AGENTS.md`'s 2-line live-build-fork description (real upstream: `vyos/vyos-live-build`; the *actual* Dockerfile clones live-build from `salsa.debian.org` directly, so this was stale prose either way), and `scripts/ansible-install`'s `ansible-galaxy collection install` command (real upstream: `vyos/vyos.vyos`, an actual published Ansible collection — this is the one target that is genuinely *executable*, not just prose/comment). Found by `REPOINT-AUDIT.md`'s step #6 cross-check (`gh repo view dozenos/<name>` for every `dozenos/*` ref found repo-wide, not just in `scm_url`/opam-pin fields). Both modes, same reasoning as `pin-toolchain-apt-source.sh`. Raises the `--ci`-mode residual count from 5 to 9 (see `mirror-push.sh`'s header and `test/test-mirror-push.sh`). All 9 (plus `overlay-dozenos-1x`'s own `pin-nonmirrored-org-refs.sh` residuals) are now the checked-in source of truth for `mirror-push.sh --allow-residuals`'s bounded allowlist: `overlay/expected-residuals.txt`, enforced by `residuals_allowlisted()` in `mirror-push.sh` — an unmatched residual fails the push closed even under `--allow-residuals`/`--build-repo`. | REPOINT-AUDIT.md #6 (new) |
+| `pin-nonmirrored-org-refs.sh` | Revert 3 files' worth of stray `github.com/dozenos/*` refs that the four-form transform correctly produced (pass `--verify` cleanly — no literal `vyos` survives) but that point at repos with no `dozenos` mirror and no mirror plan: `.coderabbit.yaml`'s org-baseline-config link (real upstream: `vyos/coderabbit`), `AGENTS.md`'s 2-line live-build-fork description (real upstream: `vyos/vyos-live-build`; the *actual* Dockerfile clones live-build from `salsa.debian.org` directly, so this was stale prose either way), and `scripts/ansible-install`'s `ansible-galaxy collection install` command (real upstream: `vyos/vyos.vyos`, an actual published Ansible collection — this is the one target that is genuinely *executable*, not just prose/comment). Found by `REPOINT-AUDIT.md`'s step #6 cross-check (`gh repo view dozenos/<name>` for every `dozenos/*` ref found repo-wide, not just in `scm_url`/opam-pin fields). Both modes, same reasoning as `pin-toolchain-apt-source.sh`. Raises the `--ci`-mode residual count from 5 to 9 (see `mirror-push.sh`'s header and `test/test-mirror-push.sh`). All 9 (plus `overlay-dozenos-1x`'s own `pin-nonmirrored-org-refs.sh` residuals) are now the checked-in source of truth for `mirror-push.sh --allow-residuals`'s bounded allowlist: `overlay-dozenos-build/expected-residuals.txt`, enforced by `residuals_allowlisted()` in `mirror-push.sh` — an unmatched residual fails the push closed even under `--allow-residuals`/`--build-repo`. | REPOINT-AUDIT.md #6 (new) |
 | `remove-committed-mok-cert.sh` | Delete `data/certificates/dozenos-prod-2025-linux.pem` (the post-rename path of pristine upstream's real, committed VyOS Secure Boot cert) after a fresh clone + transform. A fresh `git archive HEAD` still ships this real cert (the live working tree already deleted it by hand — see progress item #2/#26 — but a **fresh clone** does not start from that working tree, it starts from pristine `HEAD`, which still has it). Sanity-checks the cert's subject contains "VyOS" via `openssl x509 -subject` before deleting (falls back to a PEM-header check if `openssl` is unavailable) so it never blindly deletes an unrelated file at that path. | #9/#26 |
 | ~~`gen-throwaway-keys.sh`~~ | **Not implemented, and intentionally not part of this overlay** — per `.powerloop/2026-07-07-cicd.note.md` item #18b notes: "Throwaway GPG/minisign keys are NOT in overlay — CI injects real pubkeys from secrets (item 3)." Confirmed correct: this stays a CI-secret-injection concern, not a file the overlay generates or ships. | #10 (explicitly excluded) |
 | ~~`regen-default-credential.sh`~~ | **Not implemented — out of scope for this repo.** The #23 password-hash fix touches `tools/cloud-init/AWS/config.boot.default` and `tools/container/config.boot.default` (arguably vyos-build-scoped) **plus** 5 locations inside the `vyos-1x`/`dozenos-1x` repo (definitely not vyos-build-scoped). Deferred as a whole to avoid a half-fix that regenerates the hash in 2 places while leaving the other 5 (in a different repo) stale/inconsistent; revisit when `dozenos-1x`'s own overlay is built and coordinate a single hash regenerated consistently everywhere. | #8/#23 (deferred) |
@@ -512,7 +512,7 @@ needed for a from-scratch clone.
 
 Decision: accept the transform's rename. In mode-B CI (fresh clone ->
 `rename-transform.sh`), the entrypoint ends up named `build-dozenos-image`
-(no overlay/revert-rename step needed — this is automatic, since the
+(no overlay-dozenos-build/revert-rename step needed — this is automatic, since the
 filename contains `vyos` and the four-form rule is a superset rule). Any
 docs/CI steps that invoke the image builder must call `./build-dozenos-image`,
 not `./build-vyos-image`.
@@ -527,7 +527,7 @@ line), without clobbering a block that already has one. Runs as step 2 of
 the mode-B pipeline, immediately after `rename-transform.sh`:
 ```
 git clone upstream vyos-build -> rename-transform.sh <clone> ->
-wire-prebuild-hooks.sh <clone>/scripts/package-build -> overlay/apply-overlay.sh <clone> -> build
+wire-prebuild-hooks.sh <clone>/scripts/package-build -> overlay-dozenos-build/apply-overlay.sh <clone> -> build
 ```
 
 ## Repro test — PASSED (2026-07-08, item #18d re-run; static only, no network/build)
@@ -536,7 +536,7 @@ wire-prebuild-hooks.sh <clone>/scripts/package-build -> overlay/apply-overlay.sh
 `pin-nonmirrored-org-refs.sh` (REPOINT-AUDIT.md #6, added later this same
 day) — see the `value-fixes/` table above and `SWEEP-dozenos-build.md`'s own
 reconciliation note. The current, correct `--ci`-mode count is **9**,
-tracked in `overlay/expected-residuals.txt`. This section's other assertions
+tracked in `overlay-dozenos-build/expected-residuals.txt`. This section's other assertions
 ((b)–(e), idempotency, the bug-fix writeup) are unaffected and still accurate.
 
 ```
@@ -544,7 +544,7 @@ git -C vyos-build archive HEAD | tar -x -C <scratch>/repro   # 318 files, pristi
 rename-transform.sh <scratch>/repro
 rm -rf <scratch>/repro/.github
 wire-prebuild-hooks.sh <scratch>/repro/scripts/package-build
-overlay/apply-overlay.sh <scratch>/repro         # no flag = --ci (the DEFAULT,
+overlay-dozenos-build/apply-overlay.sh <scratch>/repro         # no flag = --ci (the DEFAULT,
                                                   # and what mirror-push.sh --build-repo uses)
 ```
 
@@ -583,7 +583,7 @@ HEAD` of the local `vyos-build` checkout):
   (`vyatta-bash`, `vyatta-biosdevname`, `vyatta-cfg`, `ipaddrcheck`,
   `hvinfo`, `dozenos-http-api-tools`) — no longer residual in `--ci` mode.
 
-  Separately, `overlay/apply-overlay.sh --local <scratch>/repro` (re-verified
+  Separately, `overlay-dozenos-build/apply-overlay.sh --local <scratch>/repro` (re-verified
   2026-07-08) reports **19** residual hits: the same 5 build-time pointers
   above, plus all 14 `pin-helper-scm-urls.sh`-reverted git scm_urls (now
   correctly at `github.com/vyos/*`, including `dozenos-http-api-tools` →

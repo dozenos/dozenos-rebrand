@@ -50,9 +50,9 @@ files, where `vyos` is data, not a shipped artifact) while leaving every
   `github.com/dozenos/<target>` (seed or snapshot-sync mode, detected
   automatically). Supports `--dry-run` and `--work <dir>` (scratch dir,
   defaults to a fresh `mktemp -d`).
-- **`overlay/`** -- post-transform overlay for the `vyos-build` repo: new
+- **`overlay-dozenos-build/`** -- post-transform overlay for the `vyos-build` repo: new
   files, value fixes, and logic patches the pure text transform structurally
-  cannot produce. See `overlay/README.md` and `overlay/MANIFEST.md`.
+  cannot produce. See `overlay-dozenos-build/README.md` and `overlay-dozenos-build/MANIFEST.md`.
 - **`overlay-dozenos-1x/`** -- the equivalent per-repo overlay for the
   `vyos-1x` -> `dozenos-1x` mirror.
 - **`dep-graph/`** -- `dep-graph.json` plus `resolve-rebuild-set.sh`

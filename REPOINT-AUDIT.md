@@ -146,7 +146,7 @@ anywhere in the tree carries a `vyos` token, case-insensitive).
 Confirmed renamed recipe dirs under `scripts/package-build/`:
 - `dozenos-1x/` (was `vyos-1x/`)
 - `dozenos-http-api-tools/` (was `vyos-http-api-tools/`, via `new-files/`
-  shipped pre-renamed — see `overlay/MANIFEST.md`)
+  shipped pre-renamed — see `overlay-dozenos-build/MANIFEST.md`)
 
 (The other 15 mirrored-dependency recipes — `libnss-mapuser`,
 `libpam-radius-auth`, `shim-signed`, `tacacs`, `vpp`, `vyatta-bash`,
@@ -156,7 +156,7 @@ rename; their *content* repointing is covered in §2.)
 
 ## 5. --ci / --local correctness
 
-`overlay/apply-overlay.sh`'s exact mode gating (step 3/3):
+`overlay-dozenos-build/apply-overlay.sh`'s exact mode gating (step 3/3):
 
 ```bash
 if [ "$MODE" = "local" ]; then
@@ -240,9 +240,9 @@ source.sh` pattern exactly (revert to real upstream, **both modes**
 unconditionally — these are permanent non-mirrored targets, not a
 temporary pre-push-order gap like `pin-helper-scm-urls.sh`'s 14 entries):
 
-- `overlay/value-fixes/pin-nonmirrored-org-refs.sh` (vyos-build overlay) —
+- `overlay-dozenos-build/value-fixes/pin-nonmirrored-org-refs.sh` (vyos-build overlay) —
   reverts `.coderabbit.yaml`, `AGENTS.md` (both lines), and
-  `scripts/ansible-install`. Wired into `overlay/apply-overlay.sh` step 3/3,
+  `scripts/ansible-install`. Wired into `overlay-dozenos-build/apply-overlay.sh` step 3/3,
   both `--ci` and `--local`.
 - `overlay-dozenos-1x/value-fixes/pin-nonmirrored-org-refs.sh` (dozenos-1x
   overlay) — reverts `.coderabbit.yaml` and `python/dozenos/qos/base.py`.

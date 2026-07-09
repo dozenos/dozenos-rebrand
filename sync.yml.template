@@ -187,7 +187,7 @@ jobs:
           if [ "$REPO_NAME" = "dozenos-build" ]; then
             echo "I: this mirror IS dozenos-build -- build-machinery change; dispatching an image rebuild directly (no package-rebuild to resolve)."
             gh api repos/dozenos/dozenos-nightly-build/dispatches \
-              -f event_type="dozenos-incremental-rebuild-complete" \
+              -f event_type="dozenos-image-build-requested" \
               -F "client_payload[package]=$REPO_NAME"
             exit 0
           fi

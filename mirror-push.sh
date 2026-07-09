@@ -49,13 +49,13 @@ set -euo pipefail
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 RENAME_TRANSFORM="$SCRIPT_DIR/rename-transform.sh"
 WIRE_HOOKS="$SCRIPT_DIR/wire-prebuild-hooks.sh"
-APPLY_OVERLAY="$SCRIPT_DIR/overlay/apply-overlay.sh"
+APPLY_OVERLAY="$SCRIPT_DIR/overlay-dozenos-build/apply-overlay.sh"
 SYNC_TEMPLATE="$SCRIPT_DIR/sync.yml.template"
 # Checked-in allowlist of DELIBERATE vyos residuals --allow-residuals may
 # pass through --verify (see residuals_allowlisted() below and that file's
 # own header for the format/rationale). This bounds --allow-residuals to a
 # known set instead of blanket-allowing any verify failure.
-EXPECTED_RESIDUALS="$SCRIPT_DIR/overlay/expected-residuals.txt"
+EXPECTED_RESIDUALS="$SCRIPT_DIR/overlay-dozenos-build/expected-residuals.txt"
 
 # ref of dozenos/dozenos-rebrand the generated sync.yml pins its own
 # "Checkout dozenos-rebrand" step to (item #14, see SYNC.md). Overridable via
@@ -127,7 +127,7 @@ done
 # packages.vyos.net / cdn.vyos.io toolchain apt hosts, and the reverted
 # dangling github.com/dozenos/* refs with no mirror -- .coderabbit.yaml,
 # AGENTS.md, scripts/ansible-install, REPOINT-AUDIT.md #6 -- see
-# overlay/apply-overlay.sh --ci's step 3 and overlay/MANIFEST.md). Requiring
+# overlay-dozenos-build/apply-overlay.sh --ci's step 3 and overlay-dozenos-build/MANIFEST.md). Requiring
 # the caller to separately pass --allow-residuals for every --build-repo run
 # is redundant (it is *always* required, never optional, for this target) and
 # was previously a latent bug: --build-repo alone left ALLOW_RESIDUALS=0, so
@@ -137,7 +137,7 @@ done
 # unchanged for ordinary (non-build-repo) per-package mirrors.
 #
 # --allow-residuals does NOT blanket-allow -- it is bounded by the checked-in
-# allowlist (EXPECTED_RESIDUALS / overlay/expected-residuals.txt, enforced by
+# allowlist (EXPECTED_RESIDUALS / overlay-dozenos-build/expected-residuals.txt, enforced by
 # residuals_allowlisted() at step 6). Every residual line --verify reports
 # must match an allowlist entry (same file + a content-substring match) or
 # mirror-push.sh dies (fail-closed) even with --allow-residuals/--build-repo
@@ -195,7 +195,7 @@ portable_overlay_path() {
       printf 'dozenos-rebrand/%s' "$rel"
       ;;
     *)
-      # Every real per-repo overlay this toolkit ships (overlay/,
+      # Every real per-repo overlay this toolkit ships (overlay-dozenos-build/,
       # overlay-dozenos-1x/) lives under $SCRIPT_DIR for exactly this
       # reason -- an ad-hoc/test overlay outside it (e.g. a synthetic
       # fixture directory) has no portable CI path, since the self-sync
@@ -332,14 +332,14 @@ if [ -n "$OVERLAY_DIR" ]; then
     # EXCLUDE anything under .github/ -- this generic --overlay mechanism is
     # for per-repo value-fix content only (see WORKFLOW-POLICY.md's "Where
     # DozenOS's own workflows come from"); the only sanctioned sources of
-    # .github/workflows/* content are overlay/new-files/ (via --build-repo)
+    # .github/workflows/* content are overlay-dozenos-build/new-files/ (via --build-repo)
     # and this script's own generate_sync_workflow(). A plain --overlay dir
     # must never be able to smuggle .github/ content past step 3's strip.
     ( cd "$OVERLAY_DIR" && find . -mindepth 1 \( -type f -o -type l \) -print0 ) \
       | while IFS= read -r -d '' rel; do
           case "$rel" in
             ./.github/*|./.github)
-              log "WARNING: --overlay '$OVERLAY_DIR' contains '$rel' under .github/ -- skipping it (a plain --overlay may never add .github/ content; use overlay/new-files/ via --build-repo instead)"
+              log "WARNING: --overlay '$OVERLAY_DIR' contains '$rel' under .github/ -- skipping it (a plain --overlay may never add .github/ content; use overlay-dozenos-build/new-files/ via --build-repo instead)"
               continue
               ;;
           esac
@@ -366,7 +366,7 @@ generate_sync_workflow "$CLONE_DIR"
 # ------------------------------------------------------------------------- #
 # 6) Verify -- must be 0 residual vyos, unless --allow-residuals AND every
 #    residual matches the checked-in allowlist (EXPECTED_RESIDUALS /
-#    overlay/expected-residuals.txt). --allow-residuals does NOT
+#    overlay-dozenos-build/expected-residuals.txt). --allow-residuals does NOT
 #    blanket-allow: an unmatched residual -- a candidate GENUINE vyos leak,
 #    e.g. one introduced by a future upstream commit -- still fails closed
 #    here even under --build-repo (which forces --allow-residuals on for

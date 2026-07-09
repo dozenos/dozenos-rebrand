@@ -9,7 +9,7 @@ dependents through a dependency graph, rebuild ONLY that resolved set (never
 `scripts/package-build/*` in full), and kick off an ISO rebuild from the
 result. Cross-references: `SYNC.md` (item #14, the sender), `WORKFLOW-POLICY.md`
 (where DozenOS's own `.github/workflows/*` content is allowed to come from),
-`overlay/MANIFEST.md` (`new-files/` placement), `CI-SECRETS.md` (`BUILD_PAT`),
+`overlay-dozenos-build/MANIFEST.md` (`new-files/` placement), `CI-SECRETS.md` (`BUILD_PAT`),
 `ISO-BUILD.md`/`DISTRIBUTION.md` (item #13/#9, the ISO-build mechanism this
 item's job C triggers), and item #16 (dep-graph coverage completion + real
 validation this item hands off to).
@@ -26,7 +26,7 @@ dozenos/<some-mirror> self-syncs (sync.yml, item #14)
       CI-SECRETS.md §4)
         |
         v
-dozenos-build: overlay/new-files/.github/workflows/rebuild-dispatch.yml (item #15, THIS document)
+dozenos-build: overlay-dozenos-build/new-files/.github/workflows/rebuild-dispatch.yml (item #15, THIS document)
   job A "resolve"
     -> checkout dozenos-rebrand (runtime-minted App token)
     -> dep-graph/resolve-rebuild-set.sh <package> --json
@@ -34,7 +34,7 @@ dozenos-build: overlay/new-files/.github/workflows/rebuild-dispatch.yml (item #1
     -> collapse the linux-kernel family (if present) into ONE matrix entry
     -> outputs.matrix = the resolved, incremental build set
   job B "build"  (needs: resolve, strategy.matrix over outputs.matrix)
-    -> same shape as overlay/new-files/.github/workflows/rebuild-packages.yml
+    -> same shape as overlay-dozenos-build/new-files/.github/workflows/rebuild-packages.yml
        (item #8): ghcr.io/dozenos/dozenos-build:rolling, /dozenos +
        /dozenos-rebrand mounts, upload deb-<pkg> artifacts
     -> linux-kernel-family entries run the bespoke
@@ -45,7 +45,7 @@ dozenos-build: overlay/new-files/.github/workflows/rebuild-dispatch.yml (item #1
     -> gh workflow run package-smoketest.yml --repo <this repo>
        (in-repo ISO integration build, item #13, GITHUB_TOKEN suffices)
     -> gh api .../dozenos-nightly-build/dispatches
-       (event_type dozenos-incremental-rebuild-complete -- since 2026-07-09
+       (event_type dozenos-image-build-requested -- since 2026-07-09
         this is the PRIMARY image-build trigger: dozenos-nightly-build's
         nightly.yml listens for it via repository_dispatch, its own
         change-gate dedups; the old daily cron is now a weekly forced
@@ -309,7 +309,7 @@ fixture-totally-unknown-pkg-xyz          # exit 0
 dep-graph/dep-graph.json` — valid JSON.
 
 **Receiver workflow**: `python3 -c "import yaml; yaml.safe_load(...)"` — OK.
-`actionlint overlay/new-files/.github/workflows/rebuild-dispatch.yml` — zero
+`actionlint overlay-dozenos-build/new-files/.github/workflows/rebuild-dispatch.yml` — zero
 findings (including its embedded shell, which actionlint shellchecks
 automatically). `grep -ni vyos` / `grep 'uses:.*vyos'` — both 0 hits.
 
@@ -325,7 +325,7 @@ dozenos-rebrand/mirror-push.sh https://github.com/vyos/vyos-build.git \
 `rebuild-packages.yml`, `sync.yml` — `rebuild-dispatch.yml` is
 byte-identical to the overlay source (`diff -q`, no differences). `--verify`
 still reports the same 9 pre-existing residual `vyos` hits documented in
-`overlay/MANIFEST.md` (no new residual introduced by this item). Zero `vyos`
+`overlay-dozenos-build/MANIFEST.md` (no new residual introduced by this item). Zero `vyos`
 and zero `uses:.*vyos` across all 5 landed workflow files.
 
 **Test suite**: new `test/test-resolve-rebuild-set.sh`, 28/28 assertions
@@ -400,7 +400,7 @@ assertions across 8 test files** (199 pre-item-#16 + 20 new), 0 failures.
 (`dep-graph/dep-graph.json`, `dep-graph/validate-dep-graph.sh` (new),
 `rename-transform.sh`, `rebrand-map.conf`,
 `test/test-resolve-rebuild-set.sh`, this file, `DEP-GRAPH.md`,
-`overlay/MANIFEST.md`) is a toolkit/doc file, never copied into the
+`overlay-dozenos-build/MANIFEST.md`) is a toolkit/doc file, never copied into the
 shipped `dozenos-build` tree (all are consumed via the `/dozenos-rebrand`
 mount or read directly by CI, per §1's flow diagram) — `grep -rni vyos`
 over them shows only expected, factual references (upstream repo/package

@@ -37,7 +37,7 @@ per-repo mirror step — see `MANIFEST.md`'s "Per-repo overlay split" section.
 ## Directory layout
 
 ```
-overlay/
+overlay-dozenos-build/
   README.md          this file
   MANIFEST.md         enumerated inventory: what will live here, sourced from
                        which current vyos-build working-tree path, and which
@@ -65,7 +65,7 @@ overlay/
 3. Run `../wire-prebuild-hooks.sh <tree>/scripts/package-build` (injects
    `pre_build_hook` into every recipe block that needs it and doesn't
    already have one; excludes `linux-kernel` — see audit item #4 / MANIFEST.md).
-4. Run `overlay/apply-overlay.sh [--ci|--local] <tree>` (new-files ->
+4. Run `overlay-dozenos-build/apply-overlay.sh [--ci|--local] <tree>` (new-files ->
    logic-patches -> value-fixes, in that order; see `apply-overlay.sh`'s own
    header for exactly what each step does, and "Modes" below).
 5. Build.

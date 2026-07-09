@@ -6,7 +6,7 @@ build job (ephemeral), and from a finished nightly build to a consumer
 building blocks under `release/`; it does **not** author the nightly
 workflow itself — that is item #17, which *consumes* these helpers. See
 `WORKFLOW-POLICY.md`'s "Release distribution (#9)" section for the
-cross-reference, and `overlay/MANIFEST.md` for where the item #8 build
+cross-reference, and `overlay-dozenos-build/MANIFEST.md` for where the item #8 build
 workflows (which produce the ephemeral `.deb` artifacts this document
 describes) already live.
 
@@ -50,7 +50,7 @@ section locks (image-based upgrade, no runtime package repo) is unchanged.
 
 Mechanism: `actions/upload-artifact` / `actions/download-artifact`
 (GitHub Actions' own artifact store), as already wired up in
-`overlay/new-files/.github/workflows/rebuild-packages.yml`'s `build` job
+`overlay-dozenos-build/new-files/.github/workflows/rebuild-packages.yml`'s `build` job
 (`Upload built package(s)`, `retention-days: 7`).
 
 - **Scope:** build-internal only. A `.deb` uploaded here exists to let a
@@ -288,6 +288,6 @@ a step that doesn't need it.
   `BUILD_PAT`). This document does not redefine any of them, only states
   which step of the release flow consumes which one.
 - **Workflow policy / discoverability:** `WORKFLOW-POLICY.md`'s "Release
-  distribution (#9)" section; `overlay/MANIFEST.md`'s note on `release/`
+  distribution (#9)" section; `overlay-dozenos-build/MANIFEST.md`'s note on `release/`
   (toolkit, not overlay content — see that note for the placement
   reasoning).

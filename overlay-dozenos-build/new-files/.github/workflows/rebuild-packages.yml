@@ -22,7 +22,7 @@
 # `linux-kernel` is excluded here on purpose: its scripts/package-build/linux-kernel/build.py
 # is a bespoke driver that never reads `pre_build_hook` (see
 # dozenos-rebrand/wire-prebuild-hooks.sh's EXCLUDE_RECIPES and
-# dozenos-rebrand/overlay/MANIFEST.md's "wire-prebuild-hooks.sh narrowing"
+# dozenos-rebrand/overlay-dozenos-build/MANIFEST.md's "wire-prebuild-hooks.sh narrowing"
 # section) -- it is not a `build.py`-generic C2 recipe and needs its own,
 # separate build path, out of scope for this item.
 #

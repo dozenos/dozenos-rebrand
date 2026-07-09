@@ -11,7 +11,7 @@ cleanest place to *require* the #25 fix rather than retrofit it).
 
 Both items are **statically audited and wired here — neither was executed**.
 mlnx is a multi-GB, root-privileged, kernel-tree-dependent build; see
-`overlay/logic-patches/` and `wire-prebuild-hooks.sh` for the general
+`overlay-dozenos-build/logic-patches/` and `wire-prebuild-hooks.sh` for the general
 pattern this document extends. See `RETROSPECTIVE.md` §2(a) and
 `missing.md`#7/#8/#11 for the prior-cycle history this document formalizes.
 
@@ -43,7 +43,7 @@ Like every other block in this recipe, `mlnx` is **excluded** from the C2
 `linux-kernel/build.py` never reads `pre_build_hook` at all (verified: zero
 references to that string in the file), so wiring it here would be dead
 config. This is not mlnx-specific; it's the same reason all 16 blocks in
-this recipe are excluded (see `overlay/MANIFEST.md`'s "wire-prebuild-hooks.sh
+this recipe are excluded (see `overlay-dozenos-build/MANIFEST.md`'s "wire-prebuild-hooks.sh
 narrowing" section).
 
 ### 1.2 Precondition: a real kernel tree
@@ -70,7 +70,7 @@ container run used.
 directly from Nvidia/Mellanox's own site (`mellanox.com`) — **not**
 `packages.vyos.net/source-mirror` like `build-intel-qat.sh`/
 `build-realtek-r8126.py`/`build-realtek-r8152.py` (the three recipes
-`overlay/logic-patches/revert-source-mirror-urls.sh` targets). Confirmed by
+`overlay-dozenos-build/logic-patches/revert-source-mirror-urls.sh` targets). Confirmed by
 diffing the reproduced mode-B clone against the pristine upstream script:
 **zero bytes of this URL, or the `install.pl` flags, or the SOURCES-removal
 list, differ from upstream** — the only lines the four-form transform
@@ -105,7 +105,7 @@ conversion). These are vestigial upstream variables, likely left over from
 an earlier packaging approach; the transform renaming them is a no-op for
 any shipped artifact. **No special-casing needed** — the generic four-form
 content rule (`rename-transform.sh`) is a strict superset here exactly as
-`overlay/MANIFEST.md`'s "logic-patches" section states for the rest of this
+`overlay-dozenos-build/MANIFEST.md`'s "logic-patches" section states for the rest of this
 recipe.
 
 ### 1.5 Emitted `.deb` names — none are `vyos`-named
@@ -150,7 +150,7 @@ any of the four case forms.**
 
 If a future MLNX_OFED version ever ships a package whose *name* contains
 `vyos` (nothing in the current 24.07-0.6.1.0 source does), the correct place
-to add a rename step would be a new `overlay/logic-patches/` script
+to add a rename step would be a new `overlay-dozenos-build/logic-patches/` script
 (idempotent, `grep`-detect pattern, same idiom as
 `revert-source-mirror-urls.sh`) inserted into `build-mellanox-ofed.sh`
 between the `cp` at line 116 and the signing step at line 122 — **not**
@@ -189,9 +189,9 @@ mode-B tree (not just claimed):**
   confirmed by grepping the reproduced clone (§4).
 - The two authored CI workflows that run container builds already mount and
   work at the neutral path, not `/vyos`:
-  - `overlay/new-files/.github/workflows/rebuild-packages.yml:135-136`:
+  - `overlay-dozenos-build/new-files/.github/workflows/rebuild-packages.yml:135-136`:
     `-v "${{ github.workspace }}/dozenos-build:/dozenos" ... -w /dozenos`.
-  - `overlay/new-files/.github/workflows/package-smoketest.yml:96-97,153`:
+  - `overlay-dozenos-build/new-files/.github/workflows/package-smoketest.yml:96-97,153`:
     same `.../dozenos-build:/dozenos` pattern.
 - The self-built local image `dozenos/dozenos-build:rolling`
   (`docker/Dockerfile`, tagged locally per `.powerloop/2026-07-07-rebrand.note.md`
@@ -317,7 +317,7 @@ dozenos-rebrand/mirror-push.sh https://github.com/vyos/vyos-build.git \
   → `.github/` strip → `wire-prebuild-hooks.sh` (39 recipes/44 blocks wired,
   `linux-kernel` correctly excluded) → `apply-overlay.sh --ci` (22 new-files,
   2 logic-patches, 4 value-fix scripts) → `--verify` (9 residuals, all
-  pre-known build-time pointers per `overlay/MANIFEST.md`/`REPOINT-AUDIT.md`
+  pre-known build-time pointers per `overlay-dozenos-build/MANIFEST.md`/`REPOINT-AUDIT.md`
   — **mlnx/kernel-vars/DWARF is not among them**).
 - `<clone>/scripts/package-build/linux-kernel/build-mellanox-ofed.sh` is
   **byte-identical** to the corresponding file in the local hand-audited
@@ -373,7 +373,7 @@ dozenos-rebrand/mirror-push.sh https://github.com/vyos/vyos-build.git \
   unaffected by, and independent of, the DWARF/comp_dir concern this
   document covers (module *signing* and module *debug-path provenance* are
   orthogonal).
-- **`overlay/MANIFEST.md`**: "wire-prebuild-hooks.sh narrowing" section is
+- **`overlay-dozenos-build/MANIFEST.md`**: "wire-prebuild-hooks.sh narrowing" section is
   the authoritative reason `mlnx`/`linux-kernel` never gets a
   `pre_build_hook` — referenced, not duplicated, in §1.1 above.
 - **`RETROSPECTIVE.md` §2(a)** and **`missing.md`#7/#8/#11**: prior-cycle

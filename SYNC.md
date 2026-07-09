@@ -6,7 +6,7 @@ engine this design calls), `WORKFLOW-POLICY.md` (the `.github/` strip +
 sanctioned-workflow-source rules this design must obey), `CI-SECRETS.md`
 (the `UPSTREAM_URL` variable and `BUILD_APP_ID`/`BUILD_APP_PRIVATE_KEY`
 GitHub App contracts — the App replaced the retired `BUILD_PAT`, see its
-§4), `overlay/MANIFEST.md`
+§4), `overlay-dozenos-build/MANIFEST.md`
 (why this mechanism is a toolkit feature, not overlay content), and
 `REBUILD-DISPATCH.md` (item #15, AUTHORED — the receiver this design hands
 its dispatch off to, dep-graph bootstrap + resolver + incremental rebuild
@@ -187,7 +187,7 @@ this toolkit's `dozenos-rebrand/*` scripts exist to prevent. Instead:
    own `GITHUB_TOKEN` cannot dispatch cross-repo — see `CI-SECRETS.md` §4).
    **Fan-out routing (which dependents actually need rebuilding for a given
    package change) is item #15's receiver workflow**
-   (`overlay/new-files/.github/workflows/rebuild-dispatch.yml`,
+   (`overlay-dozenos-build/new-files/.github/workflows/rebuild-dispatch.yml`,
    AUTHORED — see `REBUILD-DISPATCH.md`) — this step only emits the event
    carrying the changed package's name; it does not itself decide what to
    rebuild. That receiver's own dependency-graph *coverage* (walking every
@@ -199,7 +199,7 @@ this toolkit's `dozenos-rebrand/*` scripts exist to prevent. Instead:
    dep-graph node), and with the image build's old daily cron reduced to a
    weekly heartbeat, skipping outright would leave build-machinery changes
    with no image-rebuild signal until the heartbeat. It therefore dispatches
-   `dozenos-incremental-rebuild-complete` STRAIGHT to
+   `dozenos-image-build-requested` STRAIGHT to
    `dozenos-nightly-build` instead — the same event
    `rebuild-dispatch.yml`'s trigger-iso job sends after every incremental
    package rebuild; the image workflow's own change-gate dedups.

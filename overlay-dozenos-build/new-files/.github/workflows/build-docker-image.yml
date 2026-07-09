@@ -7,7 +7,7 @@
 # (`secrets.REMOTE_OWNER`/`REMOTE_REUSE_REPO`) that does the actual
 # `docker build`/`push`. DozenOS has no such private reuse repo, so this
 # workflow inlines the real build+push instead of dispatching cross-repo --
-# see dozenos-rebrand/overlay/MANIFEST.md for the item #8 write-up. Same
+# see dozenos-rebrand/overlay-dozenos-build/MANIFEST.md for the item #8 write-up. Same
 # intent (rebuild the build-container image when docker/ changes), different
 # (simpler, self-contained) mechanism.
 #
@@ -59,7 +59,7 @@ jobs:
       # (If Docker Hub `docker.io/dozenos/dozenos-build` is ever wanted
       # instead, that needs a Docker Hub secret -- not currently defined in
       # dozenos-rebrand/CI-SECRETS.md -- so this intentionally defaults to
-      # ghcr.io; see dozenos-rebrand/overlay/MANIFEST.md for the rationale.)
+      # ghcr.io; see dozenos-rebrand/overlay-dozenos-build/MANIFEST.md for the rationale.)
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v4
         with:

@@ -32,14 +32,14 @@
 #                          dozenos org mirror and no mirror plan
 #
 # Full rationale for each entry: SWEEP-dozenos-build.md's classification
-# table, overlay/MANIFEST.md ("Repro test" + the pin-*.sh rows), and each
+# table, overlay-dozenos-build/MANIFEST.md ("Repro test" + the pin-*.sh rows), and each
 # revert script's own header comment.
 
 # --- dozenos-build (mirror-push.sh --build-repo) -- 8 entries, 9 residual
 #     lines (AGENTS.md contributes 2 lines matched by 1 entry). Reverted by
-#     overlay/logic-patches/revert-source-mirror-urls.sh,
-#     overlay/value-fixes/pin-toolchain-apt-source.sh, and
-#     overlay/value-fixes/pin-nonmirrored-org-refs.sh. ------------------------
+#     overlay-dozenos-build/logic-patches/revert-source-mirror-urls.sh,
+#     overlay-dozenos-build/value-fixes/pin-toolchain-apt-source.sh, and
+#     overlay-dozenos-build/value-fixes/pin-nonmirrored-org-refs.sh. ------------------------
 scripts/package-build/linux-kernel/build-realtek-r8152.py|packages.vyos.net/source-mirror|source-mirror
 scripts/package-build/linux-kernel/build-realtek-r8126.py|packages.vyos.net/source-mirror|source-mirror
 scripts/package-build/linux-kernel/build-intel-qat.sh|packages.vyos.net/source-mirror|source-mirror

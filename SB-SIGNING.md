@@ -5,7 +5,7 @@ MOK-signed kernel. Covers: which mechanism signs what, where the real key
 material comes from, the local (no key) vs CI (signed) contrast, and the
 verification a maintainer runs post-build. See `CI-SECRETS.md` for the
 exact secret names/formats, `data/certificates/README.md` (shipped via
-`overlay/new-files/`) for the on-disk contract, and
+`overlay-dozenos-build/new-files/`) for the on-disk contract, and
 `release/inject-mok-cert.sh` for the injection helper this document
 describes the usage of.
 
@@ -112,7 +112,7 @@ four-form transform's automatic rename covers this file's content (not just
 its own filename) with no hand-fix needed in the mirrored tree.
 
 **Local (no key) vs CI (signed) contrast:** `data/certificates/` ships empty
-(only `README.md` + `.gitignore`, both from `overlay/new-files/`) in every
+(only `README.md` + `.gitignore`, both from `overlay-dozenos-build/new-files/`) in every
 fresh clone/transform and in any local build where `inject-mok-cert.sh` is
 never invoked. `build-dozenos-image` still copies that empty directory into
 `includes.chroot/var/lib/shim-signed/mok/`, so the hook's
@@ -129,7 +129,7 @@ the signing hook reads a `*-dev-*`-named keypair
 (`dozenos-dev-2025-linux.{key,pem}`), while the earlier plan assumed the
 CI-injected **enrollment** cert would be `*-prod-*`-named
 (`dozenos-prod-2025-linux.pem`, mirroring upstream's pre-rebrand convention
-and the filename `overlay/value-fixes/remove-committed-mok-cert.sh` deletes
+and the filename `overlay-dozenos-build/value-fixes/remove-committed-mok-cert.sh` deletes
 from a fresh clone). Left as two different names, that mismatch would mean
 shim enrolls a cert that does not correspond to the key that signed the
 kernel — Secure Boot verification would fail.
@@ -197,7 +197,7 @@ section is updated to point here.
 
 ## 6. Where the CI injection step is wired
 
-`overlay/new-files/.github/workflows/package-smoketest.yml`'s `build_iso`
+`overlay-dozenos-build/new-files/.github/workflows/package-smoketest.yml`'s `build_iso`
 job (item #8) already runs a full `build-dozenos-image` inside Docker. A
 step calling `release/inject-mok-cert.sh` is added **immediately before**
 the "Build custom ISO image" step, guarded so it is a no-op when the
@@ -571,7 +571,7 @@ DozenOS-CA shim. Rationale:
 **Implementation.** `shim-signed` is excluded from the auto-build matrix in
 both places that enumerate recipes, matching how `linux-kernel` is special-cased:
 
-- `overlay/new-files/.github/workflows/rebuild-packages.yml` — the `discover`
+- `overlay-dozenos-build/new-files/.github/workflows/rebuild-packages.yml` — the `discover`
   step's `workflow_dispatch` `find` (`! -name shim-signed`), its push-path
   `git diff | grep -vxE 'linux-kernel|shim-signed'`, and the `on: push:`
   `paths:` filter (`'!scripts/package-build/shim-signed/**'`).

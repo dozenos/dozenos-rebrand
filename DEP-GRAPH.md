@@ -70,7 +70,7 @@ stronger source was available.
 
 | Edge | Provenance |
 |---|---|
-| `dozenos-vpp-patches` → `vpp` | `vpp`'s "vpp" block `pre_build_hook`: `` rsync -av ../dozenos-vpp-patches/patches/vpp/ ../patches/vpp/ ``; `build_cmd` then `git am`s every file there before `make ... pkg-deb`. `dozenos-vpp-patches` (unlike the bootstrap's existing `vpp` key, which is the FDio/vpp upstream fetch) is a REAL, individually dozenos-org-mirrored repo (`overlay/value-fixes/pin-helper-scm-urls.sh` lists it), so it is the actual client_payload.package a self-sync would send for a patch change. Transitively reaches `accel-ppp-ng` via the existing `vpp` → `accel-ppp-ng` edge. |
+| `dozenos-vpp-patches` → `vpp` | `vpp`'s "vpp" block `pre_build_hook`: `` rsync -av ../dozenos-vpp-patches/patches/vpp/ ../patches/vpp/ ``; `build_cmd` then `git am`s every file there before `make ... pkg-deb`. `dozenos-vpp-patches` (unlike the bootstrap's existing `vpp` key, which is the FDio/vpp upstream fetch) is a REAL, individually dozenos-org-mirrored repo (`overlay-dozenos-build/value-fixes/pin-helper-scm-urls.sh` lists it), so it is the actual client_payload.package a self-sync would send for a patch change. Transitively reaches `accel-ppp-ng` via the existing `vpp` → `accel-ppp-ng` edge. |
 | `wpa` → `hostap` | `hostap/build.sh`: `SRC=hostap`, `SRC_DEB=wpa`, then `cp -a ${SRC_DEB}/debian ${SRC}` — copies wpa's (salsa.debian.org/debian/wpa) Debian packaging wholesale into hostap's source before building. |
 | `pkg-libnftnl` → `pkg-nftables` | `netfilter/package.toml`'s `pkg-nftables` block `build_cmd`: `` sudo dpkg -i ../libnftnl*.deb; sudo mk-build-deps ...; dpkg-buildpackage ... `` — installs the freshly built libnftnl `.deb` before building nftables. |
 | `libyang` → `frr` (block-name form, additive alongside the existing `libyang3` deb-name key) | FRRouting/frr's real `debian/control` (tag `frr-10.6.1`): `` Build-Depends: ... libyang-dev (>= 3.0.3) \| libyang2-dev (>= 2.1.128), ... `` — verified against the actual upstream packaging metadata, not just the local `dpkg -i ../*.deb` step. |
@@ -261,7 +261,7 @@ Grepped the whole toolkit: **no script in `dozenos-rebrand/` currently
 passes `--stamp` or sets `REBRAND_VERSION_STAMP`** —
 `wire-prebuild-hooks.sh`'s inserted `pre_build_hook` line is always
 `` "/dozenos-rebrand/rename-transform.sh ." `` (no `--stamp`), and no
-`overlay/new-files/.github/workflows/*.yml` sets the env var either. So
+`overlay-dozenos-build/new-files/.github/workflows/*.yml` sets the env var either. So
 the auto-stamp is **dormant in the shipped CI toolkit today** — the risk
 is real for the *mechanism* (and was real during the separate, manually-run
 local build trial `RETROSPECTIVE.md` documents) but not currently live in

@@ -4,18 +4,18 @@
 classification table below covers only the 5 non-git binary/apt-host
 build-time pointers (the `revert-source-mirror-urls.sh` x3 +
 `pin-toolchain-apt-source.sh` x2 reverts). It predates
-`overlay/value-fixes/pin-nonmirrored-org-refs.sh` (REPOINT-AUDIT.md #6),
+`overlay-dozenos-build/value-fixes/pin-nonmirrored-org-refs.sh` (REPOINT-AUDIT.md #6),
 which reverts 4 more residual lines (`.coderabbit.yaml`, 2 lines in
 `AGENTS.md`, `scripts/ansible-install`) that are equally deliberate but were
 never added to this table. **The current, correct, re-verified `--ci`-mode
-residual count for `dozenos-build` is 9, not 5** — see `overlay/MANIFEST.md`
+residual count for `dozenos-build` is 9, not 5** — see `overlay-dozenos-build/MANIFEST.md`
 (its "Repro test" section carries the same correction) and
 `mirror-push.sh`'s own header comment. This sweep's "5 hits, 0 GENUINE"
 verdict below is still accurate as far as it goes (those 5 are genuinely
 build-time-pointer, not leaks) — it is simply incomplete, missing the 4
 `nonmirrored-org-ref` items. The full 9-item set is now the checked-in
 source of truth for `mirror-push.sh --allow-residuals`'s allowlist:
-`overlay/expected-residuals.txt` (enforced by `residuals_allowlisted()` in
+`overlay-dozenos-build/expected-residuals.txt` (enforced by `residuals_allowlisted()` in
 `mirror-push.sh`), which cross-references this file's classification.
 
 Full case-insensitive `vyos` sweep over the mode-B transformed `dozenos-build`
@@ -32,7 +32,7 @@ dozenos-rebrand/mirror-push.sh https://github.com/vyos/vyos-build.git \
 
 `--dry-run` runs the WHOLE local pipeline for real (clone @ `rolling` →
 `rename-transform.sh` → strip `.github/` → `wire-prebuild-hooks.sh` →
-`overlay/apply-overlay.sh --ci` → `--verify`) and only skips the final
+`overlay-dozenos-build/apply-overlay.sh --ci` → `--verify`) and only skips the final
 `gh`/`git push` step, so the tree left behind at `<work>/clone` is
 byte-for-byte what would have been pushed. `--work <dir>` (vs. the default
 `mktemp -d` + `trap rm -rf`) was passed specifically so the produced tree
@@ -76,17 +76,17 @@ irrelevant to shipped-file-content zero-`vyos`):
 
 | file:line | matched text | classification | rationale |
 |---|---|---|---|
-| `scripts/package-build/linux-kernel/build-realtek-r8152.py:38` | `https://packages.vyos.net/source-mirror/...` | build-time-pointer | Realtek r8152 firmware tarball fetch from a real 3rd-party binary vendor mirror VyOS hosts; DozenOS does not self-host a source-mirror. Reverted from the transform's `packages.dozenos.net` (nonexistent) by `overlay/logic-patches/revert-source-mirror-urls.sh`. Matches TRANSFORM-COMPLETENESS-AUDIT.md item and `overlay/MANIFEST.md` "Repro test" §(a), 1st of 5. |
+| `scripts/package-build/linux-kernel/build-realtek-r8152.py:38` | `https://packages.vyos.net/source-mirror/...` | build-time-pointer | Realtek r8152 firmware tarball fetch from a real 3rd-party binary vendor mirror VyOS hosts; DozenOS does not self-host a source-mirror. Reverted from the transform's `packages.dozenos.net` (nonexistent) by `overlay-dozenos-build/logic-patches/revert-source-mirror-urls.sh`. Matches TRANSFORM-COMPLETENESS-AUDIT.md item and `overlay-dozenos-build/MANIFEST.md` "Repro test" §(a), 1st of 5. |
 | `scripts/package-build/linux-kernel/build-realtek-r8126.py:37` | `https://packages.vyos.net/source-mirror/...` | build-time-pointer | Same as above, r8126 firmware. Same script, same rationale. |
 | `scripts/package-build/linux-kernel/build-intel-qat.sh:17` | `https://packages.vyos.net/source-mirror/QAT.L.4.28.0-00004.tar.gz` | build-time-pointer | Intel QAT driver blob fetch, same real 3rd-party vendor mirror. Same revert script. |
-| `docker/Dockerfile:336` | `https://cdn.vyos.io/tools/syft_1.44.0_linux_...` | build-time-pointer | syft SBOM-tool binary download host used only for the dev/CI container image build; real 3rd-party tool distribution CDN, not DozenOS-owned. Reverted by `overlay/value-fixes/pin-toolchain-apt-source.sh`. |
+| `docker/Dockerfile:336` | `https://cdn.vyos.io/tools/syft_1.44.0_linux_...` | build-time-pointer | syft SBOM-tool binary download host used only for the dev/CI container image build; real 3rd-party tool distribution CDN, not DozenOS-owned. Reverted by `overlay-dozenos-build/value-fixes/pin-toolchain-apt-source.sh`. |
 | `docker/dozenos-dev.list:1` | `https://packages.vyos.net/repositories/rolling` | build-time-pointer | Toolchain apt-source host for the dev-container build image (filename itself IS renamed to `dozenos-dev.list` — only the URL content is reverted). DozenOS ships as a whole-image upgrade model with no apt-tracked distro, so self-hosting this apt repo is out of scope. Reverted by `pin-toolchain-apt-source.sh`. |
 
 **Totals: 5 hits, 0 GENUINE, 5 build-time-pointer, 0 upstream-3rd-party**
 (scope of THIS table only — see the reconciliation note at the top of this
 file: `pin-nonmirrored-org-refs.sh`'s 4 additional residual lines raise the
 actual current `--ci`-mode total to 9, tracked in
-`overlay/expected-residuals.txt`, not in this table)
+`overlay-dozenos-build/expected-residuals.txt`, not in this table)
 (the 5 build-time-pointer hits are themselves references to genuine 3rd-party
 upstream hosts — `packages.vyos.net`/`cdn.vyos.io` — but are bucketed as
 "build-time-pointer" per the task's own framing, since they are the
@@ -94,7 +94,7 @@ specific, itemized, allowed residual set, not incidental 3rd-party mentions
 elsewhere in the tree).
 
 This is **exactly** the known deliberate 5-item residual set documented in
-`dozenos-rebrand/overlay/MANIFEST.md` ("Repro test — PASSED" §(a)) and
+`dozenos-rebrand/overlay-dozenos-build/MANIFEST.md` ("Repro test — PASSED" §(a)) and
 enumerated in `mirror-push.sh`'s own header comment. No 6th or unexplained
 residual bucketed as build-time-pointer — the bucket does not exceed the
 known ~5, so no genuine leak is smuggled in under that label.
@@ -113,8 +113,8 @@ in-tree sweep.
 
 All 5 are non-git, real 3rd-party binary/apt hosts with no DozenOS-hosted
 equivalent yet (a deliberate, revisitable decision — see
-`overlay/logic-patches/revert-source-mirror-urls.sh` and
-`overlay/value-fixes/pin-toolchain-apt-source.sh` headers): reverting them to
+`overlay-dozenos-build/logic-patches/revert-source-mirror-urls.sh` and
+`overlay-dozenos-build/value-fixes/pin-toolchain-apt-source.sh` headers): reverting them to
 `dozenos.*` would produce a URL that never resolves and break the build
 (firmware/driver tarball fetch, apt package install, SBOM tool download).
 Unlike git `scm_url`s (which correctly point at `github.com/dozenos/*` once
@@ -200,7 +200,7 @@ verified-passing state the sweep just exercised):
 *(See the reconciliation note at the top of this file: the "5" below is this
 sweep's own non-git binary/apt-host scope only. The current, correct,
 `--ci`-mode total including `pin-nonmirrored-org-refs.sh`'s residuals is 9 —
-still zero genuine leaks, tracked in `overlay/expected-residuals.txt`.)*
+still zero genuine leaks, tracked in `overlay-dozenos-build/expected-residuals.txt`.)*
 
 **PASS** — zero genuine `vyos` brand leaks in the mode-B `dozenos-build`
 tree. The only residual `vyos` hits (5) are the known, documented, deliberate

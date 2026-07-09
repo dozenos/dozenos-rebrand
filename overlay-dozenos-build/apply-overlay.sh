@@ -4,12 +4,12 @@
 # rename-transform.sh + wire-prebuild-hooks.sh cannot reproduce on top of an
 # already-transformed, already-hooked vyos-build clone.
 #
-# Pipeline position (mode-B, per overlay/README.md):
+# Pipeline position (mode-B, per overlay-dozenos-build/README.md):
 #
 #   fresh clone -> rename-transform.sh <tree> ->
 #   wire-prebuild-hooks.sh <tree>/scripts/package-build -> apply-overlay.sh <tree>
 #
-# Steps, in order (each documented in overlay/MANIFEST.md, cross-referenced
+# Steps, in order (each documented in overlay-dozenos-build/MANIFEST.md, cross-referenced
 # to dozenos-rebrand/TRANSFORM-COMPLETENESS-AUDIT.md items):
 #
 #   1. new-files/    -- copy new recipe dirs + data/certificates/README.md

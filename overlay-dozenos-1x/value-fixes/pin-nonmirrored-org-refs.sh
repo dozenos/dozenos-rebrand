@@ -5,10 +5,10 @@
 # `vyos`, passes --verify cleanly) but that point at repos with NO `dozenos`
 # org mirror and no mirror plan -- found by ../../REPOINT-AUDIT.md step #6
 # cross-check ("does every github.com/dozenos/<name> ref actually resolve?").
-# Same script name/pattern as ../../overlay/value-fixes/pin-nonmirrored-org-refs.sh
+# Same script name/pattern as ../../overlay-dozenos-build/value-fixes/pin-nonmirrored-org-refs.sh
 # (the vyos-build overlay's equivalent) -- kept as two separate per-repo
 # scripts, not a shared one, per the "Per-repo overlay split" convention (see
-# ../../overlay/MANIFEST.md): this overlay is scoped to dozenos-1x only.
+# ../../overlay-dozenos-build/MANIFEST.md): this overlay is scoped to dozenos-1x only.
 #
 # Targets:
 #   .coderabbit.yaml            -- CodeRabbit org-level baseline-config
@@ -32,7 +32,7 @@
 # WHY unconditional (no --ci/--local split, matching this overlay's own
 # apply-overlay.sh, which has no mode flag at all): both are real, permanent,
 # non-mirrored targets, not a temporary pre-push-order gap -- same reasoning
-# as ../../overlay/value-fixes/pin-toolchain-apt-source.sh.
+# as ../../overlay-dozenos-build/value-fixes/pin-toolchain-apt-source.sh.
 #
 # Idempotent: a target already showing the reverted (real-vyos) form is a
 # no-op. Fails loudly if neither the expected transformed nor the

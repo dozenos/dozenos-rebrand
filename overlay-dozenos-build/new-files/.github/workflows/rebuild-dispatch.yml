@@ -423,7 +423,7 @@ jobs:
         run: |
           set -uo pipefail
           if gh api repos/dozenos/dozenos-nightly-build/dispatches \
-            -f event_type="dozenos-incremental-rebuild-complete" \
+            -f event_type="dozenos-image-build-requested" \
             -F "client_payload[package]=${{ needs.resolve.outputs.package }}" 2>&1; then
             echo "I: notified dozenos/dozenos-nightly-build"
           else

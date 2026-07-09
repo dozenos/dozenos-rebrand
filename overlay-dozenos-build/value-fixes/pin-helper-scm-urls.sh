@@ -27,9 +27,9 @@
 #   - dozenos-1x (post-rename path for vyos-1x; `name` stays "dozenos-1x" --
 #     that IS the correct future package name -- only scm_url is reverted)
 #
-# ALSO covered here: the 6 NEW recipes shipped via overlay/new-files/
+# ALSO covered here: the 6 NEW recipes shipped via overlay-dozenos-build/new-files/
 # (vyatta-bash, vyatta-biosdevname, vyatta-cfg, ipaddrcheck, hvinfo,
-# dozenos-http-api-tools) -- see overlay/MANIFEST.md. Those recipes don't
+# dozenos-http-api-tools) -- see overlay-dozenos-build/MANIFEST.md. Those recipes don't
 # exist upstream, so they bypass rename-transform.sh entirely (new-files/ is
 # copied in AFTER rename-transform.sh already ran); their package.toml files
 # ship scm_url already pointed at github.com/dozenos/* (their mirrors exist),

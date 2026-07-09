@@ -35,7 +35,7 @@
 #      own header for the full rationale.
 #
 # What is deliberately NOT here (verified against a fresh upstream clone --
-# see dozenos-rebrand/overlay/MANIFEST.md's "Per-repo overlay split" section
+# see dozenos-rebrand/overlay-dozenos-build/MANIFEST.md's "Per-repo overlay split" section
 # for where these were first flagged as vyos-1x-repo concerns):
 #
 #   - opam pin PACKAGE NAMES + URL HOSTS in libvyosconfig/Makefile

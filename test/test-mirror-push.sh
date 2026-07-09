@@ -19,7 +19,7 @@
 #   6. --dry-run never pushes and never creates a repo (no `git push` /
 #      `gh repo create` marker files written by the stubs).
 #   7. --allow-residuals is bounded by the checked-in allowlist
-#      (overlay/expected-residuals.txt): a residual matching an allowlist
+#      (overlay-dozenos-build/expected-residuals.txt): a residual matching an allowlist
 #      entry passes; an unallowlisted residual (candidate genuine vyos leak)
 #      fails closed even under --allow-residuals/--build-repo.
 #
@@ -316,7 +316,7 @@ fi
 
 # ---------------------------------------------------------------------------
 # Run 3: --allow-residuals is now BOUNDED by the checked-in allowlist
-# (overlay/expected-residuals.txt / residuals_allowlisted() in
+# (overlay-dozenos-build/expected-residuals.txt / residuals_allowlisted() in
 # mirror-push.sh) -- it no longer blanket-allows any verify failure. Two
 # cases, both via a per-repo overlay applied AFTER the plain-tree verify
 # would otherwise pass:
@@ -327,7 +327,7 @@ fi
 #       wrongly pass under --allow-residuals.
 #   3b. a residual that exactly reproduces an ALLOWLISTED entry (same
 #       repo-relative path + same content token as a real
-#       overlay/expected-residuals.txt line) must still PASS under
+#       overlay-dozenos-build/expected-residuals.txt line) must still PASS under
 #       --allow-residuals -- confirms the allowlist match itself works, not
 #       just that unmatched residuals are rejected.
 # ---------------------------------------------------------------------------
@@ -376,7 +376,7 @@ else
 fi
 
 # 3b: residual that exactly reproduces an ALLOWLISTED entry (path + token
-# taken verbatim from overlay/expected-residuals.txt) -- must still pass.
+# taken verbatim from overlay-dozenos-build/expected-residuals.txt) -- must still pass.
 OVERLAY_DIR_OK="$WORK/allowlisted-overlay"
 mkdir -p "$OVERLAY_DIR_OK/docker"
 printf 'deb [signed-by=/usr/share/keyrings/dozenos-dev-archive-keyring.asc] https://packages.vyos.net/repositories/rolling rolling main\n' \
@@ -442,12 +442,12 @@ if [ -d "$VYOS_BUILD_LOCAL/.git" ]; then
   fi
 
   # The real dozenos-build tree's 9 residuals are exactly the checked-in
-  # overlay/expected-residuals.txt set -- confirms "a transform whose output
+  # overlay-dozenos-build/expected-residuals.txt set -- confirms "a transform whose output
   # contains ONLY allowlisted residuals passes under --build-repo" against
   # the REAL pipeline output, not just a synthetic fixture (see Run 3b for
   # the synthetic/network-free version of the same assertion).
   if printf '%s\n' "$OUT5" | grep -qF 'UNEXPECTED (not in'; then
-    bad "--build-repo real-tree run reported an UNEXPECTED (unallowlisted) residual -- allowlist is out of date, see overlay/expected-residuals.txt"
+    bad "--build-repo real-tree run reported an UNEXPECTED (unallowlisted) residual -- allowlist is out of date, see overlay-dozenos-build/expected-residuals.txt"
     printf '%s\n' "$OUT5" | grep -F 'UNEXPECTED (not in'
   else
     ok "--build-repo real-tree run has zero UNEXPECTED (unallowlisted) residuals"
