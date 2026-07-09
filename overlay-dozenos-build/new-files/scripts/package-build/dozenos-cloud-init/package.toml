@@ -1,0 +1,62 @@
+# DozenOS-added package-build recipe for `dozenos-cloud-init` (added
+# 2026-07-09, prep for the aws flavor -- see DEB-CACHE.md /
+# memory's flavor notes; no flavor toml consumes it yet, so the ISO is
+# unchanged until flavors/fresh-install/aws.toml + flavors/upgrade/aws.toml
+# land).
+#
+# Upstream builds this in the cloud-init fork repo's OWN CI and ships the
+# .deb via its apt repo; dozenos-build has no upstream recipe to transform,
+# so (exactly like live-boot) DozenOS builds it IN-TREE from the
+# dozenos/dozenos-cloud-init mirror as an overlay new-file that
+# mirror-push.sh re-applies on every dozenos-build sync.
+#
+# Build mechanics (cloud-init is NOT a plain dpkg-buildpackage tree -- the
+# repo root has no debian/): its own packages/bddeb renders
+# packages/debian/*.in templates (Build-Depends from packages/pkg-deps.json
+# + requirements.txt), runs `debuild -d -us -uc` in a temp export dir, and
+# moves the artifacts back into the INVOKING cwd -- hence the trailing `mv`
+# to land the .debs one level up where CI's `<recipe-dir>/*.deb` artifact
+# glob (and the deb-cache store) expects them. DEB_BUILD_OPTIONS=nocheck
+# skips debian/rules' `make check` (the unit suite runs in the
+# dozenos-cloud-init mirror's upstream CI, not here; debuild preserves
+# DEB_* env by default). The produced binary package keeps upstream's name
+# `cloud-init` (Architecture: all) -- what a future aws flavor's package
+# list will reference.
+#
+# The leading `git tag`: the dozenos mirror is a TAG-LESS snapshot tree,
+# but bddeb's helpers need git metadata twice -- tools/read-version
+# HARD-FAILS when `git describe` (nothing to describe) disagrees with
+# cloudinit.version, and tools/make-tarball exports the source via
+# `git archive` (so stripping .git instead breaks it one step later, with
+# version_long=None). Tagging the throwaway build clone's HEAD with exactly
+# cloudinit.version's value (read live, so an upstream version bump needs
+# no recipe edit) satisfies both: describe == version, version_long becomes
+# <version>-0-g<sha>. Must be an ANNOTATED tag (-a; bare `git describe`
+# ignores lightweight ones), which needs the inline -c identity -- the
+# build container has no global git user.
+[[packages]]
+name = "dozenos-cloud-init"
+commit_id = "rolling"
+scm_url = "https://github.com/dozenos/dozenos-cloud-init.git"
+pre_build_hook = "/dozenos-rebrand/rename-transform.sh ."
+# (the trailing `rm -f cloud-init_all.deb`: bddeb drops that convenience
+# SYMLINK next to the real .deb, and build.py's own copy_packages() step
+# copies every clone-dir `*.deb` up into the recipe dir -- following the
+# symlink would materialize the same package a second time and trip
+# make-ephemeral-apt-repo.sh's strict stanza==deb-count guard. The real
+# .deb itself is copied up by copy_packages(), no manual mv needed.)
+build_cmd = "git -c user.name=dozenos-build -c user.email=build@dozenos.local tag -f -a -m version-tag \"$(python3 -c 'from cloudinit import version; print(version.version_string())')\" && DEB_BUILD_OPTIONS=nocheck ./packages/bddeb -d && rm -f cloud-init_all.deb"
+
+[dependencies]
+packages = [
+    "debhelper",
+    "dh-python",
+    "python3-setuptools",
+    "python3-configobj",
+    "python3-jinja2",
+    "python3-jsonpatch",
+    "python3-jsonschema",
+    "python3-oauthlib",
+    "python3-requests",
+    "python3-yaml",
+]

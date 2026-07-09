@@ -164,6 +164,7 @@
     "bash-completion": [],
     "blackbox_exporter": [],
     "ddclient": [],
+    "dozenos-cloud-init": [],
     "dozenos-http-api-tools": [],
     "dropbear": [],
     "ethtool": [],
@@ -337,6 +338,7 @@
       "blackbox_exporter",
       "ddclient",
       "dozenos-1x",
+      "dozenos-cloud-init",
       "dozenos-http-api-tools",
       "dropbear",
       "ethtool",
@@ -428,6 +430,10 @@
       },
       "dozenos-1x": {
         "recipe": "dozenos-1x",
+        "kernel_block": null
+      },
+      "dozenos-cloud-init": {
+        "recipe": "dozenos-cloud-init",
         "kernel_block": null
       },
       "dozenos-http-api-tools": {
