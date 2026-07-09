@@ -44,9 +44,13 @@ dozenos-build: overlay/new-files/.github/workflows/rebuild-dispatch.yml (item #1
   job C "trigger-iso"  (needs: [resolve, build])
     -> gh workflow run package-smoketest.yml --repo <this repo>
        (in-repo ISO integration build, item #13, GITHUB_TOKEN suffices)
-    -> best-effort gh api .../dozenos-nightly-build/dispatches
-       (item #17, not yet created -- runtime-minted App token,
-        continue-on-error: true)
+    -> gh api .../dozenos-nightly-build/dispatches
+       (event_type dozenos-incremental-rebuild-complete -- since 2026-07-09
+        this is the PRIMARY image-build trigger: dozenos-nightly-build's
+        nightly.yml listens for it via repository_dispatch, its own
+        change-gate dedups; the old daily cron is now a weekly forced
+        heartbeat. Still continue-on-error: an image-trigger failure must
+        not fail the package rebuild itself.)
 ```
 
 **This is INCREMENTAL, never a full rebuild.** Job B's matrix is always

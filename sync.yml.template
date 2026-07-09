@@ -143,14 +143,15 @@ jobs:
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 
-      # Cross-repo dispatch needs a cross-repo credential -- the same job's
-      # GITHUB_TOKEN (used above for the self-push) cannot dispatch into a
-      # different repo. Minted at runtime from the org GitHub App
-      # (vars.BUILD_APP_ID + secrets.BUILD_APP_PRIVATE_KEY, see
-      # dozenos-rebrand/CI-SECRETS.md §4 -- this replaced the retired
-      # BUILD_PAT), scoped to exactly the one repo this step dispatches
-      # into. The token lives ~1h and this step runs seconds after minting.
-      - name: Mint GitHub App token (dozenos-build dispatch)
+      # Cross-repo dispatch needs a cross-repo credential -- the self-push
+      # App token above is scoped to THIS repo only. Minted at runtime from
+      # the org GitHub App (vars.BUILD_APP_ID + secrets.BUILD_APP_PRIVATE_KEY,
+      # see dozenos-rebrand/CI-SECRETS.md §4), scoped to the two possible
+      # dispatch targets (which of the two is used depends on REPO_NAME --
+      # see the dispatch step below; keeping both in one mint preserves the
+      # template's byte-stability across all mirrors). The token lives ~1h
+      # and this step runs seconds after minting.
+      - name: Mint GitHub App token (rebuild/image dispatch)
         id: app_token
         if: steps.mirror_push.outputs.changed == 'true'
         uses: actions/create-github-app-token@v3
@@ -158,11 +159,11 @@ jobs:
           app-id: ${{ vars.BUILD_APP_ID }}
           private-key: ${{ secrets.BUILD_APP_PRIVATE_KEY }}
           owner: dozenos
-          repositories: dozenos-build
+          repositories: dozenos-build,dozenos-nightly-build
 
       # Fan-out routing (which dependents actually need a rebuild) is item
       # #16's job; this only emits the event carrying this package's name.
-      - name: Dispatch rebuild (dozenos-build)
+      - name: Dispatch rebuild
         if: steps.mirror_push.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ steps.app_token.outputs.token }}
@@ -170,17 +171,24 @@ jobs:
           set -euo pipefail
           # dozenos-build syncing ITSELF is a build-MACHINERY change (build
           # scripts, flavors, Dockerfile, image recipe), not a package change:
-          # "dozenos-build" is not a node in dep-graph.json, so dispatching a
-          # dozenos-package-rebuild for it resolves to an empty build-unit set
-          # (rebuild-dispatch.yml's resolve job -> any=false -> build+trigger-iso
-          # skipped) -- a pure no-op. The ISO consequence of a dozenos-build
-          # change is instead handled by the nightly change-gate, whose
-          # fingerprint INCLUDES dozenos-build (see dozenos-nightly-build's
-          # nightly.yml check-changes job). So skip the dispatch here rather
-          # than fire a guaranteed-empty one. Every OTHER mirror still
-          # dispatches normally (its package + dep-graph dependents rebuild).
+          # "dozenos-build" is not a node in dep-graph.json, so a
+          # dozenos-package-rebuild dispatch for it would resolve to an empty
+          # build-unit set (rebuild-dispatch.yml's resolve -> any=false) -- a
+          # pure no-op that would also mean NO image rebuild signal at all
+          # now that image builds are trigger-based (the weekly heartbeat is
+          # the only cron left -- see dozenos-nightly-build's nightly.yml
+          # `on:` comment). So dozenos-build dispatches STRAIGHT to
+          # dozenos-nightly-build instead: the same event rebuild-dispatch's
+          # trigger-iso job sends after an incremental package rebuild, gated
+          # there by the nightly's own change-gate fingerprint (which
+          # includes dozenos-build). Every OTHER mirror dispatches the normal
+          # package-rebuild into dozenos-build; the image build then follows
+          # from that rebuild's own completion dispatch.
           if [ "$REPO_NAME" = "dozenos-build" ]; then
-            echo "I: this mirror IS dozenos-build -- build-machinery change, no package-rebuild dispatch (would resolve to an empty build set). Nightly's change-gate rebuilds the ISO for it."
+            echo "I: this mirror IS dozenos-build -- build-machinery change; dispatching an image rebuild directly (no package-rebuild to resolve)."
+            gh api repos/dozenos/dozenos-nightly-build/dispatches \
+              -f event_type="dozenos-incremental-rebuild-complete" \
+              -F "client_payload[package]=$REPO_NAME"
             exit 0
           fi
           gh api repos/dozenos/dozenos-build/dispatches \

@@ -145,13 +145,57 @@ jobs:
           token: ${{ steps.app_token.outputs.token }}
           path: dozenos-rebrand
 
+      # ----------------------------------------------------------------- #
+      # deb-cache (dozenos-rebrand/DEB-CACHE.md): same probe/store shape as
+      # rebuild-dispatch.yml. A push that changed this recipe makes the
+      # probe miss (the recipe tree hash is key material) and the store
+      # pre-warms the nightly; a push that did NOT change this recipe's
+      # inputs (e.g. a re-run, or a discover false-positive) hits and skips
+      # the rebuild. No linux-kernel special case needed here: this
+      # workflow's matrix structurally excludes linux-kernel (see the
+      # discover job), so every leg is a full recipe unit and safe to
+      # store. Every failure mode degrades to the normal rebuild.
+      # ----------------------------------------------------------------- #
+      - name: Compute deb-cache key
+        id: cachekey
+        run: |
+          set -euo pipefail
+          if KEY=$(dozenos-rebrand/release/deb-cache.sh key \
+                --unit "${{ matrix.pkg }}" \
+                --build dozenos-build \
+                --rebrand dozenos-rebrand \
+                --manifest "$RUNNER_TEMP/deb-cache-manifest.json"); then
+            echo "I: deb-cache key for ${{ matrix.pkg }}: $KEY"
+            echo "key=$KEY" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::deb-cache key computation failed for ${{ matrix.pkg }} -- building without cache (fail-safe)"
+            echo "key=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Probe deb cache
+        id: probe
+        if: steps.cachekey.outputs.key != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if dozenos-rebrand/release/deb-cache.sh probe \
+              --unit "${{ matrix.pkg }}" \
+              --key "${{ steps.cachekey.outputs.key }}" \
+              --dest "dozenos-build/scripts/package-build/${{ matrix.pkg }}"; then
+            echo "hit=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "hit=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Free disk space (large recipes only)
-        if: contains(fromJson('["vpp"]'), matrix.pkg)
+        if: contains(fromJson('["vpp"]'), matrix.pkg) && steps.probe.outputs.hit != 'true'
         uses: jlumbroso/free-disk-space@v1.3.1
         with:
           tool-cache: false
 
       - name: Build ${{ matrix.pkg }}
+        if: steps.probe.outputs.hit != 'true'
         run: |
           docker run --rm \
             -v "${{ github.workspace }}/dozenos-build:/dozenos" \
@@ -159,6 +203,33 @@ jobs:
             -w /dozenos \
             ghcr.io/dozenos/dozenos-build:rolling \
             bash -c "cd scripts/package-build/${{ matrix.pkg }} && python3 ../build.py"
+
+      # Token minted AFTER the build (App tokens live ~1h; a slow leg would
+      # outlive a pre-build mint); continue-on-error because a cache write
+      # failure must never fail the rebuild itself.
+      - name: Mint GitHub App token (deb-cache store)
+        id: cache_token
+        if: steps.cachekey.outputs.key != '' && steps.probe.outputs.hit != 'true'
+        continue-on-error: true
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.BUILD_APP_ID }}
+          private-key: ${{ secrets.BUILD_APP_PRIVATE_KEY }}
+          owner: dozenos
+          repositories: dozenos-deb-cache
+
+      - name: Store built debs into deb cache
+        if: steps.cache_token.outcome == 'success' && steps.cachekey.outputs.key != '' && steps.probe.outputs.hit != 'true'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ steps.cache_token.outputs.token }}
+        run: |
+          set -euo pipefail
+          dozenos-rebrand/release/deb-cache.sh store \
+            --unit "${{ matrix.pkg }}" \
+            --key "${{ steps.cachekey.outputs.key }}" \
+            --debs "dozenos-build/scripts/package-build/${{ matrix.pkg }}" \
+            --manifest "$RUNNER_TEMP/deb-cache-manifest.json"
 
       - name: Upload built package(s)
         uses: actions/upload-artifact@v7

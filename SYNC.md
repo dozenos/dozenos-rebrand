@@ -183,15 +183,26 @@ this toolkit's `dozenos-rebrand/*` scripts exist to prevent. Instead:
    `client_payload[package]=<this repo's name>`, authenticated with
    a runtime-minted org GitHub App token (`vars.BUILD_APP_ID` +
    `secrets.BUILD_APP_PRIVATE_KEY`, minted in the step just before the
-   dispatch, scoped to `dozenos-build` only; the job's own `GITHUB_TOKEN`
-   cannot dispatch cross-repo — see `CI-SECRETS.md` §4). **Fan-out routing
-   (which dependents actually need rebuilding for a given package change) is
-   item #15's receiver workflow** (`overlay/new-files/.github/workflows/rebuild-dispatch.yml`,
+   dispatch, scoped to `dozenos-build` + `dozenos-nightly-build`; the job's
+   own `GITHUB_TOKEN` cannot dispatch cross-repo — see `CI-SECRETS.md` §4).
+   **Fan-out routing (which dependents actually need rebuilding for a given
+   package change) is item #15's receiver workflow**
+   (`overlay/new-files/.github/workflows/rebuild-dispatch.yml`,
    AUTHORED — see `REBUILD-DISPATCH.md`) — this step only emits the event
    carrying the changed package's name; it does not itself decide what to
    rebuild. That receiver's own dependency-graph *coverage* (walking every
    `package.toml`'s actual build inputs, beyond the bootstrap edge set item
    #15 shipped) is item #16's follow-on, not item #14's.
+   **`dozenos-build` special case (updated 2026-07-09, image builds now
+   trigger-based):** when the syncing mirror IS `dozenos-build`, a
+   package-rebuild dispatch would resolve to an empty build set (it is not a
+   dep-graph node), and with the image build's old daily cron reduced to a
+   weekly heartbeat, skipping outright would leave build-machinery changes
+   with no image-rebuild signal until the heartbeat. It therefore dispatches
+   `dozenos-incremental-rebuild-complete` STRAIGHT to
+   `dozenos-nightly-build` instead — the same event
+   `rebuild-dispatch.yml`'s trigger-iso job sends after every incremental
+   package rebuild; the image workflow's own change-gate dedups.
 
 ## 5. `UPSTREAM_URL` variable contract
 
