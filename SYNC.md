@@ -141,11 +141,22 @@ this toolkit's `dozenos-rebrand/*` scripts exist to prevent. Instead:
    variable into an env var and `exit 1`s with a `::error::` annotation before
    anything else runs, rather than letting `mirror-push.sh` fail confusingly
    on an empty first argument.
-6. **`gh auth setup-git`** (using the job's own `github.token`) so
+6. **Mint an App token (self-push) + `gh auth setup-git`** so
    `mirror-push.sh`'s own plain `git clone`/`git push` calls against
    `https://github.com/dozenos/<self>.git` authenticate automatically — no
-   auth logic needed inside `mirror-push.sh` itself, and no separate
-   credential-helper wiring in the template beyond this one step.
+   auth logic needed inside `mirror-push.sh` itself. **NOT `github.token`
+   any more (changed 2026-07-09):** `GITHUB_TOKEN` categorically cannot
+   create/update `.github/workflows/*` files, and every mirror's tree
+   carries this very `sync.yml` (dozenos-build additionally the overlay
+   build workflows) — the first real workflow-content change
+   (rebuild-dispatch.yml's deb-cache wiring) had GitHub reject the push
+   (`refusing to allow a GitHub App to create or update workflow ...
+   without "workflows" permission`); every earlier sync passed only
+   because the regenerated files were byte-identical. The App token is
+   scoped to exactly this one repo and requires the App to hold
+   **Workflows: Read/Write** (see `CI-SECRETS.md` §4's pending-user-action
+   note); the job-level `permissions:` dropped to `contents: read`
+   accordingly.
 7. **Run `mirror-push.sh`** with this repo's baked flags, capturing combined
    output to `$RUNNER_TEMP/mirror-push.out` (via `tee`, under `pipefail` so a
    `mirror-push.sh` failure still fails the step) and setting a

@@ -39,8 +39,18 @@ concurrency:
   group: dozenos-self-sync-${{ github.repository }}
   cancel-in-progress: false
 
+# contents: read only -- the self-PUSH below deliberately does NOT use this
+# job's own GITHUB_TOKEN any more: GITHUB_TOKEN categorically cannot create
+# or update .github/workflows/* files (GitHub rejects the push with
+# "refusing to allow a GitHub App to create or update workflow ... without
+# `workflows` permission", first hit 2026-07-09 when rebuild-dispatch.yml
+# changed via overlay -- every earlier sync passed only because the
+# regenerated workflow files were byte-identical). The push authenticates
+# with a runtime-minted org App token instead (see the "Mint GitHub App
+# token (self-push)" step below); the App must hold Contents R/W AND
+# Workflows R/W (CI-SECRETS.md §4).
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   sync:
@@ -82,20 +92,38 @@ jobs:
           set -euo pipefail
           echo "REPO_NAME=${GITHUB_REPOSITORY##*/}" >> "$GITHUB_ENV"
 
+      # The self-push credential. NOT github.token: that token can never
+      # touch .github/workflows/* (see the `permissions:` comment above),
+      # and every mirror's tree carries this very sync.yml plus (for
+      # dozenos-build) the overlay build workflows -- any template/overlay
+      # change would permanently wedge every mirror's self-sync. The org
+      # App token CAN update workflow files once the App holds Workflows
+      # R/W (CI-SECRETS.md §4); scoped to exactly this one repo. Minted
+      # right before use; the whole clone->transform->push pipeline runs
+      # well inside the token's ~1h lifetime.
+      - name: Mint GitHub App token (self-push)
+        id: push_token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.BUILD_APP_ID }}
+          private-key: ${{ secrets.BUILD_APP_PRIVATE_KEY }}
+          owner: dozenos
+          repositories: ${{ env.REPO_NAME }}
+
       # Lets mirror-push.sh's own plain `git clone/push https://github.com/...`
-      # calls authenticate as this job (contents:write on the GITHUB_TOKEN
-      # above), without mirror-push.sh needing any GitHub-auth logic of its
-      # own -- it never learns a URL is an authenticated one.
+      # calls authenticate as the App token above, without mirror-push.sh
+      # needing any GitHub-auth logic of its own -- it never learns a URL is
+      # an authenticated one.
       - name: Configure git auth for self-push
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.push_token.outputs.token }}
         run: gh auth setup-git
 
       - name: Run mirror-push.sh (self-sync)
         id: mirror_push
         env:
           UPSTREAM_URL: ${{ vars.UPSTREAM_URL }}
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.push_token.outputs.token }}
         run: |
           set -euo pipefail
           out_file="$RUNNER_TEMP/mirror-push.out"
