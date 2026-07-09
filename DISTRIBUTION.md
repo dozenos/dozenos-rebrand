@@ -33,6 +33,17 @@ VyOS-derived `.deb` from source, per the C2 build system), but built
 travel from the job that built them to the job that assembles the ISO. That
 is what tier (a) below is for.
 
+### §1a. Amendment (user-approved 2026-07-09): the deb-cache is not that mirror
+
+`dozenos/dozenos-deb-cache` (see `DEB-CACHE.md`) durably stores built
+`.deb`s as content-addressed GitHub Release entries so unchanged packages
+skip their nightly rebuild. It does NOT reopen the decision above: there is
+no `Packages`/`Release` index, no apt-reachable endpoint, no OS-runtime
+consumer, no signing/rate-limit burden — its only readers are the CI jobs
+that previously rebuilt the same bytes from source, and tier (a) below
+remains exactly how `.deb`s travel into an ISO build. The decision this
+section locks (image-based upgrade, no runtime package repo) is unchanged.
+
 ## 2. Two artifact tiers
 
 ### (a) Ephemeral: CI-internal `.deb` passing (job → job, within a run)

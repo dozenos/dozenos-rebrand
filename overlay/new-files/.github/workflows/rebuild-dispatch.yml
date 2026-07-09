@@ -228,8 +228,48 @@ jobs:
           token: ${{ steps.app_token.outputs.token }}
           path: dozenos-rebrand
 
+      # ----------------------------------------------------------------- #
+      # deb-cache (dozenos-rebrand/DEB-CACHE.md): probe by content key
+      # before building; a hit means this unit's inputs are all unchanged
+      # (e.g. an idempotent re-dispatch, or two mirrors of the same unit
+      # dispatching back-to-back) and the stored full .deb set is
+      # downloaded instead of rebuilt. Every failure mode degrades to the
+      # normal rebuild, never to a wrong artifact.
+      # ----------------------------------------------------------------- #
+      - name: Compute deb-cache key
+        id: cachekey
+        run: |
+          set -euo pipefail
+          if KEY=$(dozenos-rebrand/release/deb-cache.sh key \
+                --unit "${{ matrix.unit.recipe }}" \
+                --build dozenos-build \
+                --rebrand dozenos-rebrand \
+                --manifest "$RUNNER_TEMP/deb-cache-manifest.json"); then
+            echo "I: deb-cache key for ${{ matrix.unit.recipe }}: $KEY"
+            echo "key=$KEY" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::deb-cache key computation failed for ${{ matrix.unit.recipe }} -- building without cache (fail-safe)"
+            echo "key=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Probe deb cache
+        id: probe
+        if: steps.cachekey.outputs.key != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if dozenos-rebrand/release/deb-cache.sh probe \
+              --unit "${{ matrix.unit.recipe }}" \
+              --key "${{ steps.cachekey.outputs.key }}" \
+              --dest "dozenos-build/scripts/package-build/${{ matrix.unit.recipe }}"; then
+            echo "hit=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "hit=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Free disk space (large recipes only)
-        if: contains(fromJson('["vpp", "linux-kernel"]'), matrix.unit.recipe)
+        if: contains(fromJson('["vpp", "linux-kernel"]'), matrix.unit.recipe) && steps.probe.outputs.hit != 'true'
         uses: jlumbroso/free-disk-space@v1.3.1
         with:
           tool-cache: false
@@ -239,6 +279,7 @@ jobs:
       # entry here, kernel/OOT included -- there is no separate upstream-org-
       # mounted code path anywhere in this workflow to accidentally take.
       - name: Build ${{ matrix.unit.recipe }}
+        if: steps.probe.outputs.hit != 'true'
         run: |
           set -euo pipefail
           RECIPE="${{ matrix.unit.recipe }}"
@@ -268,6 +309,43 @@ jobs:
               ghcr.io/dozenos/dozenos-build:rolling \
               bash -c "cd scripts/package-build/$RECIPE && python3 ../build.py"
           fi
+
+      # Store into the deb cache so the nightly (which computes the SAME
+      # key from the same inputs) hits what this dispatch just built --
+      # the day's incremental rebuilds pre-warm the night's full set.
+      # linux-kernel units are EXCLUDED from store on purpose: this
+      # workflow narrows the kernel build to the resolved blocks
+      # (--packages), so its .deb set is a SUBSET of the full family
+      # (kernel + every OOT module + vpp) that the nightly's linux-kernel
+      # leg needs -- caching it would make the nightly ship an incomplete
+      # kernel family. (Probe above is still fine for linux-kernel: a hit
+      # only ever returns a FULL family set stored by a nightly.) Token is
+      # minted here, after the build, so a multi-hour leg cannot outlive
+      # the ~1h token; continue-on-error because a cache write failure
+      # must never fail the rebuild itself.
+      - name: Mint GitHub App token (deb-cache store)
+        id: cache_token
+        if: matrix.unit.recipe != 'linux-kernel' && steps.cachekey.outputs.key != '' && steps.probe.outputs.hit != 'true'
+        continue-on-error: true
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.BUILD_APP_ID }}
+          private-key: ${{ secrets.BUILD_APP_PRIVATE_KEY }}
+          owner: dozenos
+          repositories: dozenos-deb-cache
+
+      - name: Store built debs into deb cache
+        if: steps.cache_token.outcome == 'success' && matrix.unit.recipe != 'linux-kernel' && steps.cachekey.outputs.key != '' && steps.probe.outputs.hit != 'true'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ steps.cache_token.outputs.token }}
+        run: |
+          set -euo pipefail
+          dozenos-rebrand/release/deb-cache.sh store \
+            --unit "${{ matrix.unit.recipe }}" \
+            --key "${{ steps.cachekey.outputs.key }}" \
+            --debs "dozenos-build/scripts/package-build/${{ matrix.unit.recipe }}" \
+            --manifest "$RUNNER_TEMP/deb-cache-manifest.json"
 
       - name: Upload built package(s)
         uses: actions/upload-artifact@v7
