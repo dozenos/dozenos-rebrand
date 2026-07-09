@@ -78,6 +78,14 @@ jobs:
       - name: Discover changed/requested packages
         id: set
         shell: bash
+        env:
+          # Via env, never ${{ }}-interpolated into the script body: the
+          # dispatch input is free text and must not be able to inject
+          # shell here. BEFORE/AFTER are GitHub-validated SHAs but ride
+          # along for uniformity.
+          INPUT_PACKAGE_NAME: ${{ inputs.package_name }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.event.after }}
         run: |
           set -euo pipefail
           # linux-kernel and shim-signed are both excluded from the matrix:
@@ -88,18 +96,44 @@ jobs:
           # uses Debian's stock shim-signed instead; see
           # dozenos-rebrand/SB-SIGNING.md). The recipe dir stays in-tree for
           # 1:1 upstream mirror parity but is not auto-built.
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ inputs.package_name }}" ]; then
-            packages=$(jq -cn --arg p "${{ inputs.package_name }}" '[$p]')
-          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            packages=$(find scripts/package-build -mindepth 1 -maxdepth 1 -type d \
+          discover_all() {
+            find scripts/package-build -mindepth 1 -maxdepth 1 -type d \
               ! -name linux-kernel ! -name shim-signed -printf '%f\n' \
-              | sort | jq -R . | jq -sc .)
+              | sort | jq -R . | jq -sc .
+          }
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "$INPUT_PACKAGE_NAME" ]; then
+            packages=$(jq -cn --arg p "$INPUT_PACKAGE_NAME" '[$p]')
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            packages=$(discover_all)
           else
-            before="${{ github.event.before }}"
-            after="${{ github.event.after }}"
-            changed=$(git diff --name-only "$before" "$after" -- scripts/package-build/ \
-              | awk -F/ '{print $3}' | sort -u | grep -vxE 'linux-kernel|shim-signed' || true)
-            packages=$(printf '%s\n' "$changed" | jq -R . | jq -sc 'map(select(length > 0))')
+            # Diff-based discovery, with a FULL-SET fallback whenever the
+            # diff cannot be computed. The failure modes are real: a
+            # branch-creation push has an all-zeros BEFORE; a multi-commit
+            # push puts BEFORE outside fetch-depth:2 (the targeted
+            # `git fetch <sha>` below recovers exactly that case); a
+            # force-push can make BEFORE unreachable entirely. The old code
+            # swallowed every one of these with `|| true` and emitted an
+            # EMPTY matrix -- silently building NOTHING is the wrong
+            # fail-safe direction. Unknown scope must mean "rebuild
+            # everything": the deb-cache keeps that cheap (unchanged units
+            # probe-hit and skip their build).
+            diff_ok=1
+            if [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+              diff_ok=0
+            else
+              git cat-file -e "${BEFORE}^{commit}" 2>/dev/null \
+                || git fetch --quiet --depth=1 origin "$BEFORE" 2>/dev/null || true
+              changed_files=$(git diff --name-only "$BEFORE" "$AFTER" -- scripts/package-build/ 2>/dev/null) \
+                || diff_ok=0
+            fi
+            if [ "$diff_ok" = 1 ]; then
+              changed=$(printf '%s\n' "$changed_files" \
+                | awk -F/ '{print $3}' | sort -u | grep -vxE 'linux-kernel|shim-signed' || true)
+              packages=$(printf '%s\n' "$changed" | jq -R . | jq -sc 'map(select(length > 0))')
+            else
+              echo "::warning::cannot diff $BEFORE..$AFTER (branch creation or force-push) -- falling back to the FULL package set (deb-cache keeps unchanged units cheap)"
+              packages=$(discover_all)
+            fi
           fi
           echo "packages=$packages" >> "$GITHUB_OUTPUT"
           if [ "$packages" = "[]" ]; then
@@ -187,12 +221,6 @@ jobs:
           else
             echo "hit=false" >> "$GITHUB_OUTPUT"
           fi
-
-      - name: Free disk space (large recipes only)
-        if: contains(fromJson('["vpp"]'), matrix.pkg) && steps.probe.outputs.hit != 'true'
-        uses: jlumbroso/free-disk-space@v1.3.1
-        with:
-          tool-cache: false
 
       - name: Build ${{ matrix.pkg }}
         if: steps.probe.outputs.hit != 'true'

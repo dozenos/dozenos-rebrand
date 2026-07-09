@@ -76,6 +76,17 @@ on:
       - '!scripts/package-build/**'
       - '!docker/**'
 
+# Disposable, state-based validation: every run tests the CURRENT rolling
+# tree, so only the newest run matters. cancel-in-progress: true cancels
+# stale pending AND running builds -- unlike nightly.yml (which must never
+# cancel a run that may be mid-publish, hence its cancel-in-progress:
+# false). Without any group, burst trigger-iso dispatches (one per
+# incremental rebuild) stack N parallel ~45-minute ISO builds for no
+# added signal.
+concurrency:
+  group: dozenos-package-smoketest
+  cancel-in-progress: true
+
 permissions:
   contents: read
 

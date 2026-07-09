@@ -131,12 +131,19 @@ jobs:
     steps:
       - name: Determine changed package
         id: pkg
+        env:
+          # Via env, never ${{ }}-interpolated into the script body:
+          # client_payload is sender-controlled data (anything holding a
+          # dispatch-capable token can shape it) and the dispatch input is
+          # free text -- neither may be able to inject shell here.
+          DISPATCH_PACKAGE: ${{ github.event.client_payload.package }}
+          INPUT_PACKAGE: ${{ inputs.package }}
         run: |
           set -euo pipefail
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            PACKAGE="${{ inputs.package }}"
+            PACKAGE="$INPUT_PACKAGE"
           else
-            PACKAGE="${{ github.event.client_payload.package }}"
+            PACKAGE="$DISPATCH_PACKAGE"
           fi
           if [ -z "$PACKAGE" ]; then
             echo "::error::no package name found -- repository_dispatch client_payload.package was empty/missing, or the workflow_dispatch 'package' input was blank. Expected event_type dozenos-package-rebuild with client_payload.package set (see ../../../SYNC.md / ../../../REBUILD-DISPATCH.md)." >&2
@@ -169,9 +176,12 @@ jobs:
 
       - name: Resolve incremental rebuild set into build units
         id: resolve
+        env:
+          # Same env-not-interpolation rule as the step above: this output
+          # is derived from the dispatch payload.
+          PACKAGE: ${{ steps.pkg.outputs.package }}
         run: |
           set -euo pipefail
-          PACKAGE="${{ steps.pkg.outputs.package }}"
 
           # nodes-to-build-units.sh (item #30) wraps resolve-rebuild-set.sh:
           # same transitive closure, then normalized+deduped into real
@@ -277,12 +287,6 @@ jobs:
           else
             echo "hit=false" >> "$GITHUB_OUTPUT"
           fi
-
-      - name: Free disk space (large recipes only)
-        if: contains(fromJson('["vpp", "linux-kernel"]'), matrix.unit.recipe) && steps.probe.outputs.hit != 'true'
-        uses: jlumbroso/free-disk-space@v1.3.1
-        with:
-          tool-cache: false
 
       # Neutral /dozenos mount + neutral dozenos_bld build user (see
       # ../../../MLNX-AND-DWARF.md #25) applies identically to every matrix
@@ -420,11 +424,13 @@ jobs:
         continue-on-error: true
         env:
           GH_TOKEN: ${{ steps.app_token.outputs.token }}
+          # Payload-derived -- env, not interpolation (see resolve job).
+          PACKAGE: ${{ needs.resolve.outputs.package }}
         run: |
           set -uo pipefail
           if gh api repos/dozenos/dozenos-nightly-build/dispatches \
             -f event_type="dozenos-image-build-requested" \
-            -F "client_payload[package]=${{ needs.resolve.outputs.package }}" 2>&1; then
+            -F "client_payload[package]=$PACKAGE" 2>&1; then
             echo "I: notified dozenos/dozenos-nightly-build"
           else
             echo "I: dozenos/dozenos-nightly-build dispatch failed -- expected until item #17 creates that repo; non-fatal (continue-on-error)"
