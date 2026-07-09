@@ -87,6 +87,16 @@
 # driver), while still always rebuilding the kernel itself first (block
 # declaration order in package.toml is preserved by build.py's own filter,
 # and `linux-kernel` is declared first).
+#
+# *** ITEM #30's NARROWING SUPERSEDED BY THE DEB-CACHE (2026-07-09) *** --
+# the build job's linux-kernel branch is back to a FULL-family build (no
+# --packages filter): a narrowed subset can never be stored in the
+# deb-cache (its tag would claim the full unit), and with image builds now
+# trigger-based the full family was getting rebuilt minutes later on the
+# image side anyway -- narrow-then-full costs strictly more total compute
+# than full-once-then-cache-hit. nodes-to-build-units.sh still emits
+# kernel_blocks (kept as resolution metadata); the build no longer consumes
+# it as a filter. See the build step's own comment and DEB-CACHE.md §4.
 name: DozenOS incremental rebuild (dispatch receiver)
 
 on:
@@ -284,23 +294,30 @@ jobs:
           set -euo pipefail
           RECIPE="${{ matrix.unit.recipe }}"
           if [ "$RECIPE" = "linux-kernel" ]; then
-            # linux-kernel family: ONE build.py invocation, --packages
-            # narrowed to exactly the resolved+deduped blocks (kernel itself
-            # always included -- see this workflow's header comment for why
-            # that is a correctness requirement, not just a convenience).
-            BLOCKS_JSON='${{ toJson(matrix.unit.kernel_blocks) }}'
-            BLOCKS=$(jq -r '(. // []) | join(" ")' <<< "$BLOCKS_JSON")
-            if [ -z "$BLOCKS" ]; then
-              echo "::error::linux-kernel matrix unit has no kernel_blocks -- refusing to build with an empty --packages filter (nodes-to-build-units.sh should never emit this; see its own header)" >&2
-              exit 1
-            fi
-            echo "I: linux-kernel build -- python3 build.py --packages $BLOCKS"
+            # linux-kernel family: ONE build.py invocation, NO --packages
+            # filter -- the FULL family (kernel + every OOT module + vpp),
+            # exactly like the image build's own linux-kernel leg.
+            #
+            # This deliberately SUPERSEDES item #30's --packages narrowing
+            # (build only the resolved kernel_blocks) as of the deb-cache
+            # (2026-07-09): the narrowed build's .deb set is a SUBSET of the
+            # full family, so it could never be stored (a cache entry
+            # claiming the full unit while holding a subset would hand the
+            # image build an ISO missing NIC-driver debs), and with image
+            # builds now trigger-based the full family got rebuilt minutes
+            # later on the image side anyway -- narrow-then-full is strictly
+            # more total compute than full-once-then-cache-hit. Building the
+            # full family here makes the output storable; the image build
+            # then hits it. matrix.unit.kernel_blocks is still emitted by
+            # nodes-to-build-units.sh (and useful as run metadata for WHY
+            # this unit resolved) but no longer narrows the build.
+            echo "I: linux-kernel FULL-family build (resolved trigger blocks: ${{ join(matrix.unit.kernel_blocks, ' ') }})"
             docker run --rm \
               -v "${{ github.workspace }}/dozenos-build:/dozenos" \
               -v "${{ github.workspace }}/dozenos-rebrand:/dozenos-rebrand" \
               -w /dozenos \
               ghcr.io/dozenos/dozenos-build:rolling \
-              bash -c "cd scripts/package-build/linux-kernel && python3 build.py --packages $BLOCKS"
+              bash -c "cd scripts/package-build/linux-kernel && python3 build.py"
           else
             docker run --rm \
               -v "${{ github.workspace }}/dozenos-build:/dozenos" \
@@ -310,22 +327,19 @@ jobs:
               bash -c "cd scripts/package-build/$RECIPE && python3 ../build.py"
           fi
 
-      # Store into the deb cache so the nightly (which computes the SAME
-      # key from the same inputs) hits what this dispatch just built --
-      # the day's incremental rebuilds pre-warm the night's full set.
-      # linux-kernel units are EXCLUDED from store on purpose: this
-      # workflow narrows the kernel build to the resolved blocks
-      # (--packages), so its .deb set is a SUBSET of the full family
-      # (kernel + every OOT module + vpp) that the nightly's linux-kernel
-      # leg needs -- caching it would make the nightly ship an incomplete
-      # kernel family. (Probe above is still fine for linux-kernel: a hit
-      # only ever returns a FULL family set stored by a nightly.) Token is
-      # minted here, after the build, so a multi-hour leg cannot outlive
-      # the ~1h token; continue-on-error because a cache write failure
-      # must never fail the rebuild itself.
+      # Store into the deb cache so the image build (which computes the
+      # SAME key from the same inputs) hits what this dispatch just built --
+      # every incremental rebuild pre-warms the image build's full set.
+      # linux-kernel included: since the build step above builds the FULL
+      # family (the item-#30 --packages narrowing was dropped with the
+      # deb-cache, see that step's comment), its output is a complete,
+      # storable unit exactly like the image build's own kernel leg. Token
+      # is minted here, AFTER the (multi-hour, for kernel) build, so the
+      # leg cannot outlive the ~1h token; continue-on-error because a cache
+      # write failure must never fail the rebuild itself.
       - name: Mint GitHub App token (deb-cache store)
         id: cache_token
-        if: matrix.unit.recipe != 'linux-kernel' && steps.cachekey.outputs.key != '' && steps.probe.outputs.hit != 'true'
+        if: steps.cachekey.outputs.key != '' && steps.probe.outputs.hit != 'true'
         continue-on-error: true
         uses: actions/create-github-app-token@v3
         with:
@@ -335,7 +349,7 @@ jobs:
           repositories: dozenos-deb-cache
 
       - name: Store built debs into deb cache
-        if: steps.cache_token.outcome == 'success' && matrix.unit.recipe != 'linux-kernel' && steps.cachekey.outputs.key != '' && steps.probe.outputs.hit != 'true'
+        if: steps.cache_token.outcome == 'success' && steps.cachekey.outputs.key != '' && steps.probe.outputs.hit != 'true'
         continue-on-error: true
         env:
           GH_TOKEN: ${{ steps.cache_token.outputs.token }}

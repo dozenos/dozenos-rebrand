@@ -72,16 +72,25 @@ nightly will derive at 04:17 — the day's incremental rebuilds pre-warm the
 night's full set. The nightly then typically hits on everything, including
 the units that changed that day.
 
-## 4. linux-kernel store exclusion (dispatch only)
+## 4. linux-kernel units: full-family everywhere (updated 2026-07-09)
 
-`rebuild-dispatch.yml` narrows kernel-family builds to the resolved blocks
-(`build.py --packages ...`), producing a SUBSET of the full family set
-(kernel + every OOT module + vpp). Storing that subset would let a later
-nightly hit an incomplete kernel family, so the dispatch workflow never
-stores `linux-kernel` units; only the nightly's unfiltered kernel leg does.
-Probing is safe either way — a hit can only return a full nightly-stored
-set. (`vpp`-unit entries stored by dispatch are unused by the nightly —
-vpp has no nightly leg of its own — but harmless.)
+Originally `rebuild-dispatch.yml` narrowed kernel-family builds to the
+resolved blocks (`build.py --packages ...`, item #30) and was therefore
+excluded from storing `linux-kernel` entries: the narrowed output is a
+SUBSET of the full family (kernel + every OOT module + vpp), and a cache
+entry whose tag claims the full unit while holding a subset would hand a
+later image build an ISO missing driver debs — that is the "pollution" the
+exclusion prevented.
+
+With image builds trigger-based, the narrowing became strictly worse:
+dispatch built the subset (unstorable), then the image build key-missed
+and rebuilt the FULL family minutes later anyway. So the dispatch's
+linux-kernel branch is back to an unfiltered full-family build — identical
+to the image build's kernel leg, hence complete, hence storable — and the
+store exclusion is lifted. One kernel-input change now costs ONE full
+family build (in dispatch), which the image build then cache-hits.
+(`vpp`-unit entries stored by dispatch are unused by the image build — vpp
+has no leg of its own there — but harmless.)
 
 ## 5. Hygiene
 
