@@ -269,8 +269,9 @@ list`/`gh run download` against this same repo's own past workflow runs.
 Same-repo only; no new secret (`GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}`, the
 ambient token — `DISTRIBUTION.md` §7's "`GITHUB_TOKEN` suffices" reasoning
 applies identically here: this is not a cross-repo operation, unlike the
-`dozenos-rebrand` checkout in the same job, which genuinely needs
-`BUILD_PAT`).
+`dozenos-rebrand` checkout in the same job, which genuinely needs a
+cross-repo credential — the runtime-minted org GitHub App token, see
+`CI-SECRETS.md` §4).
 
 **Validated**: `python3 -c "import yaml; yaml.safe_load(...)"` — clean.
 `actionlint` — zero new findings; the tool does flag `secrets.MOK_SIGNING_KEY

@@ -129,11 +129,20 @@ jobs:
       # (injected by dozenos-rebrand/wire-prebuild-hooks.sh), which build.py
       # runs with cwd = the freshly cloned package source, shelling out to
       # that absolute path.
+      - name: Mint GitHub App token (dozenos-rebrand checkout)
+        id: app_token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.BUILD_APP_ID }}
+          private-key: ${{ secrets.BUILD_APP_PRIVATE_KEY }}
+          owner: dozenos
+          repositories: dozenos-rebrand
+
       - name: Checkout dozenos-rebrand
         uses: actions/checkout@v7
         with:
           repository: dozenos/dozenos-rebrand
-          token: ${{ secrets.BUILD_PAT }}
+          token: ${{ steps.app_token.outputs.token }}
           path: dozenos-rebrand
 
       - name: Free disk space (large recipes only)

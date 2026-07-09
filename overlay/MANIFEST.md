@@ -171,8 +171,10 @@ Docker Hub was considered and rejected: it would need a new secret not
 present in `CI-SECRETS.md`, which the task instructions require flagging
 rather than inventing.
 
-**Secrets/vars referenced** (all present in `CI-SECRETS.md`): `secrets.BUILD_PAT`
-(cross-repo checkout of `dozenos/dozenos-rebrand` into `/dozenos-rebrand`),
+**Secrets/vars referenced** (all present in `CI-SECRETS.md`):
+`vars.BUILD_APP_ID` + `secrets.BUILD_APP_PRIVATE_KEY` (runtime-minted org
+GitHub App token — replaced the retired `BUILD_PAT`, see `CI-SECRETS.md` §4 —
+for the cross-repo checkout of `dozenos/dozenos-rebrand` into `/dozenos-rebrand`),
 `secrets.GITHUB_TOKEN` (implicit — ghcr.io push in `build-docker-image.yml`;
 as of item #13, also used by `package-smoketest.yml`'s `gh run
 list`/`gh run download` calls against this same repo's own workflow-run
@@ -245,9 +247,11 @@ the same underlying reason) are collapsed into one matrix entry and built
 via the bespoke `scripts/package-build/linux-kernel/build.py` with no
 `--packages` filter — see `../REBUILD-DISPATCH.md` §5.
 
-**Secrets referenced**: `secrets.BUILD_PAT` (checkout `dozenos-rebrand` in
-jobs `resolve`/`build`; the best-effort `dozenos-nightly-build` notify in job
-`trigger-iso`), the job's own `GITHUB_TOKEN` (same-repo `gh workflow run
+**Secrets referenced**: `vars.BUILD_APP_ID` + `secrets.BUILD_APP_PRIVATE_KEY`
+(runtime-minted org GitHub App tokens — see `CI-SECRETS.md` §4 — for the
+`dozenos-rebrand` checkout in jobs `resolve`/`build` and the best-effort
+`dozenos-nightly-build` notify in job `trigger-iso`), the job's own
+`GITHUB_TOKEN` (same-repo `gh workflow run
 package-smoketest.yml` in job `trigger-iso`, `actions: write` granted at job
 level). No new secret introduced beyond what `CI-SECRETS.md` already lists.
 

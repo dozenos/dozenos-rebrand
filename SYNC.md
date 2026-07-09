@@ -4,7 +4,9 @@ How every `dozenos/*` mirror keeps itself up to date with its VyOS upstream,
 without any central coordinator. Cross-references: `mirror-push.sh` (the
 engine this design calls), `WORKFLOW-POLICY.md` (the `.github/` strip +
 sanctioned-workflow-source rules this design must obey), `CI-SECRETS.md`
-(the `UPSTREAM_URL`/`BUILD_PAT` secret contracts), `overlay/MANIFEST.md`
+(the `UPSTREAM_URL` variable and `BUILD_APP_ID`/`BUILD_APP_PRIVATE_KEY`
+GitHub App contracts — the App replaced the retired `BUILD_PAT`, see its
+§4), `overlay/MANIFEST.md`
 (why this mechanism is a toolkit feature, not overlay content), and
 `REBUILD-DISPATCH.md` (item #15, AUTHORED — the receiver this design hands
 its dispatch off to, dep-graph bootstrap + resolver + incremental rebuild
@@ -157,8 +159,10 @@ this toolkit's `dozenos-rebrand/*` scripts exist to prevent. Instead:
    'true'`: `gh api repos/dozenos/dozenos-build/dispatches` with
    `event_type=dozenos-package-rebuild` and
    `client_payload[package]=<this repo's name>`, authenticated with
-   `secrets.BUILD_PAT` (the job's own `GITHUB_TOKEN` cannot dispatch
-   cross-repo — see `CI-SECRETS.md`'s `BUILD_PAT` row). **Fan-out routing
+   a runtime-minted org GitHub App token (`vars.BUILD_APP_ID` +
+   `secrets.BUILD_APP_PRIVATE_KEY`, minted in the step just before the
+   dispatch, scoped to `dozenos-build` only; the job's own `GITHUB_TOKEN`
+   cannot dispatch cross-repo — see `CI-SECRETS.md` §4). **Fan-out routing
    (which dependents actually need rebuilding for a given package change) is
    item #15's receiver workflow** (`overlay/new-files/.github/workflows/rebuild-dispatch.yml`,
    AUTHORED — see `REBUILD-DISPATCH.md`) — this step only emits the event

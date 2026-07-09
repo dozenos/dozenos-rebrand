@@ -95,7 +95,8 @@ jobs:
       # list`/`gh run download` against this same repo's own past
       # rebuild-packages.yml runs. Same-repo only -- no cross-repo token
       # needed here, unlike the dozenos-rebrand checkout below (that one
-      # genuinely needs BUILD_PAT, see ../../../CI-SECRETS.md and
+      # genuinely needs a cross-repo credential, the runtime-minted org
+      # GitHub App token -- see ../../../CI-SECRETS.md §4 and
       # ../../../DISTRIBUTION.md §7 "GITHUB_TOKEN suffices").
       actions: read
     outputs:
@@ -117,11 +118,20 @@ jobs:
 
       # See rebuild-packages.yml's comment: /dozenos-rebrand must be present
       # at that absolute path for pre_build_hook to resolve.
+      - name: Mint GitHub App token (dozenos-rebrand checkout)
+        id: app_token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.BUILD_APP_ID }}
+          private-key: ${{ secrets.BUILD_APP_PRIVATE_KEY }}
+          owner: dozenos
+          repositories: dozenos-rebrand
+
       - name: Checkout dozenos-rebrand
         uses: actions/checkout@v7
         with:
           repository: dozenos/dozenos-rebrand
-          token: ${{ secrets.BUILD_PAT }}
+          token: ${{ steps.app_token.outputs.token }}
           path: dozenos-rebrand
 
       - name: Generate ISO version string

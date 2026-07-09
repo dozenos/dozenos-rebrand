@@ -7,8 +7,10 @@
 #   gh api repos/dozenos/dozenos-build/dispatches \
 #     -f event_type="dozenos-package-rebuild" \
 #     -F "client_payload[package]=<that repo's own name>"
-# via secrets.BUILD_PAT (the sync job's own GITHUB_TOKEN cannot dispatch
-# cross-repo). THIS workflow is what receives that event inside
+# via a runtime-minted org GitHub App token (the sync job's own GITHUB_TOKEN
+# cannot dispatch cross-repo -- see dozenos-rebrand/CI-SECRETS.md §4 for the
+# App setup that replaced the retired BUILD_PAT). THIS workflow is what
+# receives that event inside
 # dozenos-build, and its only job is to rebuild EXACTLY the changed
 # package plus whatever the dependency graph says must ALSO rebuild --
 # see ../../../dep-graph/dep-graph.json,
@@ -139,11 +141,20 @@ jobs:
       # ../rebuild-packages.yml's own comment on why -- here it's the
       # resolver + graph, not pre_build_hook, but the checkout is the same
       # one).
+      - name: Mint GitHub App token (dozenos-rebrand checkout)
+        id: app_token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.BUILD_APP_ID }}
+          private-key: ${{ secrets.BUILD_APP_PRIVATE_KEY }}
+          owner: dozenos
+          repositories: dozenos-rebrand
+
       - name: Checkout dozenos-rebrand
         uses: actions/checkout@v7
         with:
           repository: dozenos/dozenos-rebrand
-          token: ${{ secrets.BUILD_PAT }}
+          token: ${{ steps.app_token.outputs.token }}
           path: dozenos-rebrand
 
       - name: Resolve incremental rebuild set into build units
@@ -201,11 +212,20 @@ jobs:
       # requirement applies whether the build reached this package through a
       # push to dozenos-build itself (item #8) or, as here, an incremental
       # dispatch from a dependency mirror (item #15).
+      - name: Mint GitHub App token (dozenos-rebrand checkout)
+        id: app_token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.BUILD_APP_ID }}
+          private-key: ${{ secrets.BUILD_APP_PRIVATE_KEY }}
+          owner: dozenos
+          repositories: dozenos-rebrand
+
       - name: Checkout dozenos-rebrand
         uses: actions/checkout@v7
         with:
           repository: dozenos/dozenos-rebrand
-          token: ${{ secrets.BUILD_PAT }}
+          token: ${{ steps.app_token.outputs.token }}
           path: dozenos-rebrand
 
       - name: Free disk space (large recipes only)
@@ -272,9 +292,10 @@ jobs:
   # ../../../DISTRIBUTION.md/../../../WORKFLOW-POLICY.md) -- once it exists,
   # it is the "full, guaranteed-fresh" nightly counterpart
   # (../../../ISO-BUILD.md §5's own "what item #17 should do instead" note).
-  # This job ALSO best-effort-notifies it by name via BUILD_PAT
-  # (cross-repo dispatch needs BUILD_PAT, not GITHUB_TOKEN -- see
-  # ../../../CI-SECRETS.md), guarded with `continue-on-error: true` so a 404
+  # This job ALSO best-effort-notifies it by name via a runtime-minted org
+  # GitHub App token (cross-repo dispatch needs a cross-repo credential, not
+  # GITHUB_TOKEN -- see ../../../CI-SECRETS.md §4), guarded with
+  # `continue-on-error: true` so a 404
   # against a not-yet-existing repo never fails this job; once item #17
   # lands, this step starts working with zero changes needed here.
   # ------------------------------------------------------------------------- #
@@ -293,10 +314,20 @@ jobs:
           gh workflow run package-smoketest.yml --repo "${{ github.repository }}"
           echo "I: dispatched package-smoketest.yml on ${{ github.repository }} (in-repo ISO integration build)"
 
+      - name: Mint GitHub App token (dozenos-nightly-build notify)
+        id: app_token
+        continue-on-error: true
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.BUILD_APP_ID }}
+          private-key: ${{ secrets.BUILD_APP_PRIVATE_KEY }}
+          owner: dozenos
+          repositories: dozenos-nightly-build
+
       - name: Best-effort notify dozenos-nightly-build (item #17, not yet created)
         continue-on-error: true
         env:
-          GH_TOKEN: ${{ secrets.BUILD_PAT }}
+          GH_TOKEN: ${{ steps.app_token.outputs.token }}
         run: |
           set -uo pipefail
           if gh api repos/dozenos/dozenos-nightly-build/dispatches \

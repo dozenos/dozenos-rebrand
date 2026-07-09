@@ -115,14 +115,29 @@ jobs:
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 
-      # Cross-repo dispatch needs BUILD_PAT -- the same job's GITHUB_TOKEN
-      # (used above for the self-push) cannot dispatch into a different repo.
+      # Cross-repo dispatch needs a cross-repo credential -- the same job's
+      # GITHUB_TOKEN (used above for the self-push) cannot dispatch into a
+      # different repo. Minted at runtime from the org GitHub App
+      # (vars.BUILD_APP_ID + secrets.BUILD_APP_PRIVATE_KEY, see
+      # dozenos-rebrand/CI-SECRETS.md §4 -- this replaced the retired
+      # BUILD_PAT), scoped to exactly the one repo this step dispatches
+      # into. The token lives ~1h and this step runs seconds after minting.
+      - name: Mint GitHub App token (dozenos-build dispatch)
+        id: app_token
+        if: steps.mirror_push.outputs.changed == 'true'
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.BUILD_APP_ID }}
+          private-key: ${{ secrets.BUILD_APP_PRIVATE_KEY }}
+          owner: dozenos
+          repositories: dozenos-build
+
       # Fan-out routing (which dependents actually need a rebuild) is item
       # #16's job; this only emits the event carrying this package's name.
       - name: Dispatch rebuild (dozenos-build)
         if: steps.mirror_push.outputs.changed == 'true'
         env:
-          GH_TOKEN: ${{ secrets.BUILD_PAT }}
+          GH_TOKEN: ${{ steps.app_token.outputs.token }}
         run: |
           set -euo pipefail
           # dozenos-build syncing ITSELF is a build-MACHINERY change (build

@@ -245,19 +245,21 @@ eyeball.
   `release/sign-and-publish.sh`'s own header for the same rule restated at
   the point where the private key is actually (transiently) decoded to disk.
 
-## 7. `GITHUB_TOKEN` suffices — no cross-repo PAT needed
+## 7. `GITHUB_TOKEN` suffices — no cross-repo credential needed
 
 Publishing the Release happens **inside** `dozenos-nightly-build` itself
 (item #17's workflow runs there, and publishes there) — this is a
 same-repo operation. The workflow's own ambient `GITHUB_TOKEN` (with
 `contents: write` permission granted in that job) is sufficient for
-`gh release create`; **`BUILD_PAT`/`secrets.BUILD_PAT` is not needed for
-this step.** `BUILD_PAT` remains necessary elsewhere in item #17's workflow
-for genuinely cross-repo operations (checking out `dozenos-build` and
-`dozenos-rebrand` into the `dozenos-nightly-build` job — see
-`CI-SECRETS.md`'s row for `BUILD_PAT`), but the Release-publish step itself
-is same-repo and should use `GITHUB_TOKEN`, not `BUILD_PAT`, to keep the
-higher-privilege cross-repo credential out of a step that doesn't need it.
+`gh release create`; **no cross-repo credential is needed for this step.**
+A cross-repo credential — the runtime-minted org GitHub App token
+(`vars.BUILD_APP_ID` + `secrets.BUILD_APP_PRIVATE_KEY`, which replaced the
+retired `BUILD_PAT`; see `CI-SECRETS.md` §4) — remains necessary elsewhere
+in item #17's workflow for genuinely cross-repo operations (checking out
+`dozenos-build` and `dozenos-rebrand` into the `dozenos-nightly-build`
+job), but the Release-publish step itself is same-repo and should use
+`GITHUB_TOKEN`, not an App token, to keep the cross-repo credential out of
+a step that doesn't need it.
 
 ## 8. Cross-references
 
@@ -270,9 +272,10 @@ higher-privilege cross-repo credential out of a step that doesn't need it.
   boundary (tier (a) is where those `.deb`s live before item #13 consumes
   them; tier (b) is what the resulting ISO becomes afterward).
 - **Secret names:** `CI-SECRETS.md` is authoritative for
-  `MINISIGN_SECRET_KEY`, `MINISIGN_PASSWORD`, `GITHUB_TOKEN`, `BUILD_PAT`.
-  This document does not redefine any of them, only states which step of
-  the release flow consumes which one.
+  `MINISIGN_SECRET_KEY`, `MINISIGN_PASSWORD`, `GITHUB_TOKEN`, and the
+  `BUILD_APP_ID`/`BUILD_APP_PRIVATE_KEY` App pair (replaced the retired
+  `BUILD_PAT`). This document does not redefine any of them, only states
+  which step of the release flow consumes which one.
 - **Workflow policy / discoverability:** `WORKFLOW-POLICY.md`'s "Release
   distribution (#9)" section; `overlay/MANIFEST.md`'s note on `release/`
   (toolkit, not overlay content — see that note for the placement

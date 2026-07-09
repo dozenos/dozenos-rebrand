@@ -22,12 +22,13 @@ dozenos/<some-mirror> self-syncs (sync.yml, item #14)
   -> gh api repos/dozenos/dozenos-build/dispatches
        event_type: dozenos-package-rebuild
        client_payload: { "package": "<that mirror's own repo name>" }
-     (BUILD_PAT -- cross-repo dispatch, see CI-SECRETS.md)
+     (runtime-minted org GitHub App token -- cross-repo dispatch, see
+      CI-SECRETS.md §4)
         |
         v
 dozenos-build: overlay/new-files/.github/workflows/rebuild-dispatch.yml (item #15, THIS document)
   job A "resolve"
-    -> checkout dozenos-rebrand (BUILD_PAT)
+    -> checkout dozenos-rebrand (runtime-minted App token)
     -> dep-graph/resolve-rebuild-set.sh <package> --json
        (transitive closure over dep-graph/dep-graph.json's reverse map)
     -> collapse the linux-kernel family (if present) into ONE matrix entry
@@ -44,7 +45,8 @@ dozenos-build: overlay/new-files/.github/workflows/rebuild-dispatch.yml (item #1
     -> gh workflow run package-smoketest.yml --repo <this repo>
        (in-repo ISO integration build, item #13, GITHUB_TOKEN suffices)
     -> best-effort gh api .../dozenos-nightly-build/dispatches
-       (item #17, not yet created -- BUILD_PAT, continue-on-error: true)
+       (item #17, not yet created -- runtime-minted App token,
+        continue-on-error: true)
 ```
 
 **This is INCREMENTAL, never a full rebuild.** Job B's matrix is always
@@ -226,8 +228,9 @@ this half.
 both record item #17 as not-yet-authored) — it is the eventual "full,
 guaranteed-fresh nightly rebuild" counterpart (`ISO-BUILD.md` §5's own "what
 item #17 should do instead" note). This job still references it **by name**,
-using `secrets.BUILD_PAT` (cross-repo dispatch needs `BUILD_PAT`, not
-`GITHUB_TOKEN` — `CI-SECRETS.md`), wrapped so the step never fails the job
+using a runtime-minted org GitHub App token (cross-repo dispatch needs a
+cross-repo credential, not `GITHUB_TOKEN` — `CI-SECRETS.md` §4), wrapped so
+the step never fails the job
 even when the target repo 404s (`continue-on-error: true` at the step level,
 plus an in-script `if gh api ...; then ... else ...; fi` so the failure path
 is logged, not silent). Once item #17 creates that repo, this step starts
@@ -245,11 +248,15 @@ itself.
 - Workflow-level `permissions: contents: read` (minimal default).
 - Job C adds `actions: write` (job-level only) — required for
   `gh workflow run` against this same repo.
-- `secrets.BUILD_PAT` used for: checking out `dozenos/dozenos-rebrand` (jobs
-  A and B, same reason every other item #8 workflow needs it — see
-  `rebuild-packages.yml`'s own comment on `pre_build_hook`), and the
-  best-effort cross-repo notify in job C. Never used for the same-repo
-  `package-smoketest.yml` dispatch (that uses the ambient `GITHUB_TOKEN`).
+- Runtime-minted org GitHub App tokens (`vars.BUILD_APP_ID` +
+  `secrets.BUILD_APP_PRIVATE_KEY` via `actions/create-github-app-token@v2`,
+  one mint step at the start of each consuming job, `repositories:` narrowed
+  to that job's targets — see `CI-SECRETS.md` §4) used for: checking out
+  `dozenos/dozenos-rebrand` (jobs A and B, same reason every other item #8
+  workflow needs it — see `rebuild-packages.yml`'s own comment on
+  `pre_build_hook`), and the best-effort cross-repo notify in job C. Never
+  used for the same-repo `package-smoketest.yml` dispatch (that uses the
+  ambient `GITHUB_TOKEN`).
 - Zero literal `vyos` anywhere in `rebuild-dispatch.yml`; zero `uses: vyos/*`
   (verified, see §8).
 

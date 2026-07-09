@@ -205,7 +205,7 @@ EOF
 done
 
 # --- publish the GitHub Release (same-repo: GITHUB_TOKEN is sufficient,
-#     no cross-repo PAT/BUILD_PAT needed -- see DISTRIBUTION.md). ---
+#     no cross-repo credential / App token needed -- see DISTRIBUTION.md). ---
 notes_args=()
 if [ -n "$notes_file" ]; then
   notes_args=(--notes-file "$notes_file")
