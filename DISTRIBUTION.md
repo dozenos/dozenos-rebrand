@@ -163,11 +163,15 @@ the exact CLI). Fields:
 | Field | Type | Meaning |
 |---|---|---|
 | `version` | string | The release version/tag, `YYYY.MM.DD-HHMM-rolling`. |
-| `iso.name` | string | ISO asset filename, `dozenos-<version>-generic-amd64.iso`. |
-| `iso.sha256` | string | Lowercase hex sha256 of the ISO file, computed by `sha256sum`. |
-| `iso.url` | string \| null | Full download URL for the ISO asset, or `null` if `--release-url` was not supplied to the generator. |
-| `minisig.name` | string | Signature asset filename, `<iso.name>.minisig`. |
-| `minisig.url` | string \| null | Full download URL for the signature asset, or `null` under the same condition as `iso.url`. |
+| `artifacts[]` | array | One entry per released image file (multi-flavor/multi-format). |
+| `artifacts[].flavor` | string | Flavor name (toml basename), e.g. `generic`, `kvm`. |
+| `artifacts[].install_type` | string \| null | The `flavors/<subdir>` the flavor toml came from — `fresh-install` or `upgrade` — distinguishing installer images from upgrade images that share a flavor name. `null` when the generator was given the legacy two-field `--artifact` form. |
+| `artifacts[].format` | string | File extension: `iso`, `qcow2`, `vmdk`, ... |
+| `artifacts[].name` | string | Asset filename. |
+| `artifacts[].sha256` | string | Lowercase hex sha256 of the file, computed by `sha256sum`. |
+| `artifacts[].url` | string \| null | Full download URL, or `null` if `--release-url` was not supplied to the generator. |
+| `artifacts[].minisig` | object | `name`/`url` of the detached signature asset, same null rule. |
+| `iso.*`, `minisig.*` (top-level) | object \| null | **Legacy** single-ISO pointers kept for backward compatibility: the `generic` flavor's `.iso` when present, else the first `.iso`; `null` when no `.iso` was released. New consumers should read `artifacts[]`. |
 | `minisign_pubkey_file` | string | Filename of the public verify key **as committed in this repo** (`minisign.pub`) — a fixed pointer, not a per-release value; a consumer resolves it relative to the `dozenos-nightly-build` repo root, not relative to the release's own asset list. |
 | `published_at` | string | UTC timestamp (`date -u +%Y-%m-%dT%H:%M:%SZ`) of when `version.json` was generated. |
 
@@ -185,6 +189,20 @@ the exact CLI). Fields:
     "name": "dozenos-2026.07.08-0130-rolling-generic-amd64.iso.minisig",
     "url": "https://github.com/dozenos/dozenos-nightly-build/releases/download/2026.07.08-0130-rolling/dozenos-2026.07.08-0130-rolling-generic-amd64.iso.minisig"
   },
+  "artifacts": [
+    {
+      "flavor": "generic",
+      "install_type": "fresh-install",
+      "format": "iso",
+      "name": "dozenos-2026.07.08-0130-rolling-generic-amd64.iso",
+      "sha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a1",
+      "url": "https://github.com/dozenos/dozenos-nightly-build/releases/download/2026.07.08-0130-rolling/dozenos-2026.07.08-0130-rolling-generic-amd64.iso",
+      "minisig": {
+        "name": "dozenos-2026.07.08-0130-rolling-generic-amd64.iso.minisig",
+        "url": "https://github.com/dozenos/dozenos-nightly-build/releases/download/2026.07.08-0130-rolling/dozenos-2026.07.08-0130-rolling-generic-amd64.iso.minisig"
+      }
+    }
+  ],
   "minisign_pubkey_file": "minisign.pub",
   "published_at": "2026-07-08T01:35:00Z"
 }

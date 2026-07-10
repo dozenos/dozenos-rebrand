@@ -2,10 +2,13 @@
 # gen-version-json.sh -- emit the version.json manifest for a DozenOS
 # nightly release (see ../DISTRIBUTION.md, "version.json schema").
 #
-# Multi-flavor/multi-format aware: pass one --artifact FLAVOR:PATH per
-# built image file (any format -- .iso, .qcow2, .vmdk, ...); each becomes
-# an entry in the "artifacts" array with its flavor, format (file
-# extension), sha256, and download URL. For backward compatibility with
+# Multi-flavor/multi-format aware: pass one --artifact FLAVOR:SUBDIR:PATH
+# per built image file (any format -- .iso, .qcow2, .vmdk, ...); each
+# becomes an entry in the "artifacts" array with its flavor, install_type
+# (the flavors/<subdir> the flavor toml came from, e.g. fresh-install or
+# upgrade), format (file extension), sha256, and download URL. The legacy
+# two-field FLAVOR:PATH form is still accepted (install_type emitted as
+# null). For backward compatibility with
 # the original single-ISO schema, the top-level "iso"/"minisig" objects
 # are still emitted, pointing at the generic flavor's .iso when present
 # (else the first .iso given).
@@ -23,15 +26,21 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-Usage: gen-version-json.sh --version VERSION --artifact FLAVOR:PATH [--artifact ...] [OPTIONS]
+Usage: gen-version-json.sh --version VERSION --artifact FLAVOR:SUBDIR:PATH [--artifact ...] [OPTIONS]
 
 Required:
   --version VERSION       Release version string, e.g. 2026.07.08-0130-rolling
                            (DozenOS nightly scheme: YYYY.MM.DD-HHMM-rolling)
-  --artifact FLAVOR:PATH  One built image file, tagged with its flavor name.
-                           Repeatable. PATH must exist, be readable and
-                           non-empty; FLAVOR must not contain ':'.
-                           Example: --artifact kvm:build/dozenos-...-kvm-amd64.qcow2
+  --artifact FLAVOR:SUBDIR:PATH
+                           One built image file, tagged with its flavor name
+                           and the flavors/<SUBDIR> its toml came from (e.g.
+                           fresh-install, upgrade) -- emitted as the entry's
+                           "install_type". Repeatable. PATH must exist, be
+                           readable and non-empty; FLAVOR and SUBDIR must not
+                           contain ':'. The legacy two-field FLAVOR:PATH form
+                           is also accepted (install_type emitted as null),
+                           which is why PATH must not contain ':' either.
+                           Example: --artifact kvm:fresh-install:build/dozenos-...-kvm-amd64.qcow2
 
 Options:
   --release-url BASE_URL  Base URL the release assets are downloadable from,
@@ -49,9 +58,9 @@ safe to commit/publish as a public release asset.
 Example:
   gen-version-json.sh \
     --version 2026.07.08-0130-rolling \
-    --artifact generic:build/dozenos-2026.07.08-0130-rolling-generic-amd64.iso \
-    --artifact kvm:build/dozenos-2026.07.08-0130-rolling-kvm-amd64.iso \
-    --artifact kvm:build/dozenos-2026.07.08-0130-rolling-kvm-amd64.qcow2 \
+    --artifact generic:fresh-install:build/dozenos-2026.07.08-0130-rolling-generic-amd64.iso \
+    --artifact kvm:fresh-install:build/dozenos-2026.07.08-0130-rolling-kvm-amd64.iso \
+    --artifact kvm:fresh-install:build/dozenos-2026.07.08-0130-rolling-kvm-amd64.qcow2 \
     --release-url https://github.com/dozenos/dozenos-nightly-build/releases/download/2026.07.08-0130-rolling \
     --out version.json
 EOF
@@ -133,9 +142,25 @@ legacy_iso_sha=""
 
 for spec in "${artifacts[@]}"; do
   flavor="${spec%%:*}"
-  path="${spec#*:}"
-  if [ -z "$flavor" ] || [ "$flavor" = "$spec" ] || [ -z "$path" ]; then
-    echo "E: malformed --artifact '$spec' (expected FLAVOR:PATH)" >&2
+  rest="${spec#*:}"
+  if [ -z "$flavor" ] || [ "$flavor" = "$spec" ] || [ -z "$rest" ]; then
+    echo "E: malformed --artifact '$spec' (expected FLAVOR:SUBDIR:PATH)" >&2
+    exit 1
+  fi
+  # Three-field form FLAVOR:SUBDIR:PATH; the legacy two-field FLAVOR:PATH
+  # is detected by the absence of a second ':' (PATH must not contain ':').
+  case "$rest" in
+    *:*)
+      install_type="${rest%%:*}"
+      path="${rest#*:}"
+      ;;
+    *)
+      install_type=""
+      path="$rest"
+      ;;
+  esac
+  if [ -z "$path" ]; then
+    echo "E: malformed --artifact '$spec' (expected FLAVOR:SUBDIR:PATH)" >&2
     exit 1
   fi
   if [ ! -f "$path" ] || [ ! -s "$path" ]; then
@@ -158,9 +183,16 @@ for spec in "${artifacts[@]}"; do
     legacy_iso_sha="$sha256"
   fi
 
+  if [ -n "$install_type" ]; then
+    install_type_json="\"$(json_escape "$install_type")\""
+  else
+    install_type_json="null"
+  fi
+
   entry=$(cat <<EOF
     {
       "flavor": "$(json_escape "$flavor")",
+      "install_type": ${install_type_json},
       "format": "$(json_escape "$format")",
       "name": "$(json_escape "$name")",
       "sha256": "$sha256",
