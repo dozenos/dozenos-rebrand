@@ -1,102 +1,31 @@
-# DozenOS INCREMENTAL rebuild-dispatch receiver (item #15, build-unit
-# normalization fixed by item #30).
+# DozenOS INCREMENTAL rebuild-dispatch receiver.
 #
-# RECEIVING side of item #14's decentralized self-sync fan-out: every
-# dozenos/* mirror's generated sync.yml (../../../sync.yml.template, see
-# ../../../SYNC.md), after re-syncing itself from its own upstream, fires
+# Receiving side of the decentralized self-sync fan-out: every dozenos/*
+# mirror's generated sync.yml, after re-syncing itself from upstream, fires
 #   gh api repos/dozenos/dozenos-build/dispatches \
 #     -f event_type="dozenos-package-rebuild" \
 #     -F "client_payload[package]=<that repo's own name>"
-# via a runtime-minted org GitHub App token (the sync job's own GITHUB_TOKEN
-# cannot dispatch cross-repo -- see dozenos-rebrand/CI-SECRETS.md §4 for the
-# App setup that replaced the retired BUILD_PAT). THIS workflow is what
-# receives that event inside
-# dozenos-build, and its only job is to rebuild EXACTLY the changed
-# package plus whatever the dependency graph says must ALSO rebuild --
-# see ../../../dep-graph/dep-graph.json,
-# ../../../dep-graph/resolve-rebuild-set.sh (item #15's bootstrap dep-graph
-# + resolver), and ../../../dep-graph/nodes-to-build-units.sh (item #30,
-# the NORMALIZING layer this workflow now consumes -- see below for why).
-# Full spec, the event_type/payload contract, and worked examples:
-# ../../../REBUILD-DISPATCH.md.
+# This workflow rebuilds exactly the changed package plus whatever the
+# dependency graph says must also rebuild -- INCREMENTAL, never the full
+# scripts/package-build/* tree (contrast ../rebuild-packages.yml, which
+# reacts to pushes to dozenos-build's own tree). Full spec and payload
+# contract: ../../../REBUILD-DISPATCH.md; the contract is LOCKED against
+# ../../../sync.yml.template.
 #
-# *** THIS IS INCREMENTAL, NEVER A FULL REBUILD *** -- the `build` job's
-# matrix is ALWAYS exactly the `resolve` job's resolved set (the changed
-# package + its known transitive dependents), never
-# "every scripts/package-build/* recipe." Contrast with
-# ../rebuild-packages.yml (item #8), which rebuilds whatever changed in a
-# push to dozenos-build's OWN tree -- this workflow instead reacts to a
-# package changing in a DIFFERENT dozenos/* mirror repo and fans that one
-# change out through the dependency graph.
-#
-# Event_type/payload contract (LOCKED, must match ../../../sync.yml.template
-# exactly -- see ../../../REBUILD-DISPATCH.md's reconciliation note):
-#   event_type:      dozenos-package-rebuild
-#   client_payload:  { "package": "<dozenos/* mirror repo name>" }
-#
-# *** ITEM #30 FIX: build by UNIT, not by raw node name *** -- item #15's
-# resolve job used to run resolve-rebuild-set.sh directly and `cd
-# scripts/package-build/${{ matrix.pkg }}` for every resolved node. That
-# broke for any node that is NOT a scripts/package-build/ directory name:
-# several dep-graph.json nodes are binary .deb names (`python3-vici`,
-# `libtac2`, `isc-kea-common`, `libyang3`, ...) emitted by a DIFFERENTLY
-# NAMED recipe, or linux-kernel `--packages <block>` block names (`i40e`,
-# `mlnx`, `realtek-r8126`, ...) that have no directory of their own at all
-# (see dep-graph.json's own, now-fixed
-# "_notes.item16_rebuild_dispatch_directory_mapping_gap"). The `resolve` job
-# now runs ../../../dep-graph/nodes-to-build-units.sh instead of
-# resolve-rebuild-set.sh directly: it computes the SAME transitive closure,
-# then maps every resolved node to its real buildable UNIT via
-# dep-graph.json's new "build_units.node_to_unit" map and DEDUPS (e.g.
-# `libtac2` + `libtacplus-map1` both resolving alongside `tacacs` collapse
-# to ONE `{"recipe":"tacacs"}` build). The emitted matrix is now built from
-# UNIT OBJECTS, not bare strings:
+# The resolve job builds by UNIT, not by raw node name: several
+# dep-graph.json nodes are binary .deb names (`python3-vici`, `libtac2`,
+# ...) emitted by a differently-named recipe, or linux-kernel block names
+# (`i40e`, `mlnx`, ...) with no directory of their own, so `cd
+# scripts/package-build/<node>` would fail for them.
+# ../../../dep-graph/nodes-to-build-units.sh computes the transitive
+# closure, maps every node to its buildable unit via dep-graph.json's
+# "build_units.node_to_unit", and dedups. This also normalizes
+# client_payload.package itself for free (the closure always includes the
+# queried package), so a mirror name like `dozenos-vpp-patches` reaches its
+# real build unit (`vpp`) with no separate mapping here. Emitted matrix
+# entries are unit objects:
 #   generic unit: {"recipe": "<scripts/package-build subdir>"}
 #   linux-kernel unit: {"recipe": "linux-kernel", "kernel_blocks": [...]}
-# `client_payload.package` (the raw mirror repo name) is normalized through
-# this SAME map at entry for free: nodes-to-build-units.sh resolves+maps the
-# INPUT package itself as part of its own closure (resolve-rebuild-set.sh's
-# closure always includes the queried package), so a mirror name like
-# `dozenos-vpp-patches` or `libtacplus-map` reaches its real build unit
-# (`vpp`, `tacacs`) with no separate normalization step needed here.
-#
-# `linux-kernel` family handling (updated by item #30 -- see
-# nodes-to-build-units.sh's own header for the full "why" writeup):
-# scripts/package-build/linux-kernel/ is one bespoke C1 recipe directory
-# (its own build.py, not the generic scripts/package-build/build.py every
-# other C2 recipe uses) whose package.toml declares the kernel PLUS every
-# OOT kernel module as separate `--packages <name>`-selectable blocks
-# sharing one working directory and a build-order dependency (the kernel
-# must build before any OOT module reads its output) -- see
-# ../../../dep-graph/dep-graph.json's naming note and
-# ../../../MLNX-AND-DWARF.md for the neutral-mount requirement this build
-# job's /dozenos mount already satisfies. `nodes-to-build-units.sh` collapses
-# linux-kernel + any of its resolved dependents into ONE `linux-kernel` unit
-# (never N independent per-block jobs) whose `kernel_blocks` is the sorted,
-# deduped union of every resolved block PLUS `linux-kernel` itself, always
-# (even when a lone OOT block like `accel-ppp-ng` is the only thing
-# resolved) -- because `linux-kernel/build-kernel.sh` writes the
-# `kernel-vars` file (`KERNEL_DIR=...`) every OOT driver script's own
-# `build-intel-nic.sh`-style header requires, so filtering the kernel block
-# itself OUT of `--packages` would build nothing but a hard "KERNEL_DIR not
-# defined" failure. The `build` job's `linux-kernel` branch therefore always
-# runs `python3 build.py --packages <the resolved blocks, kernel included>`
-# -- narrower than item #15's original "no --packages filter, rebuild every
-# block unconditionally" (a real efficiency improvement: a lone
-# `accel-ppp-ng` change no longer also rebuilds every unrelated Intel NIC
-# driver), while still always rebuilding the kernel itself first (block
-# declaration order in package.toml is preserved by build.py's own filter,
-# and `linux-kernel` is declared first).
-#
-# *** ITEM #30's NARROWING SUPERSEDED BY THE DEB-CACHE (2026-07-09) *** --
-# the build job's linux-kernel branch is back to a FULL-family build (no
-# --packages filter): a narrowed subset can never be stored in the
-# deb-cache (its tag would claim the full unit), and with image builds now
-# trigger-based the full family was getting rebuilt minutes later on the
-# image side anyway -- narrow-then-full costs strictly more total compute
-# than full-once-then-cache-hit. nodes-to-build-units.sh still emits
-# kernel_blocks (kept as resolution metadata); the build no longer consumes
-# it as a filter. See the build step's own comment and DEB-CACHE.md §4.
 name: DozenOS incremental rebuild (dispatch receiver)
 
 on:
@@ -117,11 +46,6 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # ------------------------------------------------------------------------- #
-  # Job A: resolve -- read client_payload.package (or the manual test input),
-  # run resolve-rebuild-set.sh against the bootstrap dep-graph, and collapse
-  # the linux-kernel family (if present in the result) into one matrix entry.
-  # ------------------------------------------------------------------------- #
   resolve:
     runs-on: ubuntu-latest
     outputs:
@@ -133,9 +57,8 @@ jobs:
         id: pkg
         env:
           # Via env, never ${{ }}-interpolated into the script body:
-          # client_payload is sender-controlled data (anything holding a
-          # dispatch-capable token can shape it) and the dispatch input is
-          # free text -- neither may be able to inject shell here.
+          # client_payload is sender-controlled data and the dispatch input
+          # is free text -- neither may be able to inject shell here.
           DISPATCH_PACKAGE: ${{ github.event.client_payload.package }}
           INPUT_PACKAGE: ${{ inputs.package }}
         run: |
@@ -152,12 +75,7 @@ jobs:
           echo "I: changed package: $PACKAGE"
           echo "package=$PACKAGE" >> "$GITHUB_OUTPUT"
 
-      # dep-graph/ (dep-graph.json + resolve-rebuild-set.sh +
-      # nodes-to-build-units.sh) lives in dozenos-rebrand, same cross-repo
-      # checkout every other dozenos-build workflow already does (see
-      # ../rebuild-packages.yml's own comment on why -- here it's the
-      # resolver + graph, not pre_build_hook, but the checkout is the same
-      # one).
+      # dep-graph/ (graph + resolver + unit mapper) lives in dozenos-rebrand.
       - name: Mint GitHub App token (dozenos-rebrand checkout)
         id: app_token
         uses: actions/create-github-app-token@v3
@@ -183,13 +101,9 @@ jobs:
         run: |
           set -euo pipefail
 
-          # nodes-to-build-units.sh (item #30) wraps resolve-rebuild-set.sh:
-          # same transitive closure, then normalized+deduped into real
-          # buildable units -- see this workflow's own header comment and
-          # that script's header for the full "why" writeup. Any node with
-          # no known build unit (e.g. the documented "squid" case in
-          # dep-graph.json's build_units.unmappable) is dropped with a
-          # warning on its own stderr, never silently invented.
+          # Any node with no known build unit (e.g. dep-graph.json's
+          # documented build_units.unmappable "squid" case) is dropped with
+          # a warning on stderr, never silently invented.
           MATRIX=$(dozenos-rebrand/dep-graph/nodes-to-build-units.sh "$PACKAGE" --graph dozenos-rebrand/dep-graph/dep-graph.json --json)
           echo "I: deduped build-unit matrix for '$PACKAGE': $MATRIX"
           echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
@@ -200,24 +114,16 @@ jobs:
             echo "any=true" >> "$GITHUB_OUTPUT"
           fi
 
-  # ------------------------------------------------------------------------- #
-  # Job B: build -- INCREMENTAL. The matrix is exactly `resolve`'s deduped
-  # build-UNIT set (item #30 -- see this workflow's own header), never the
-  # full scripts/package-build/* tree. Same build shape as
-  # ../rebuild-packages.yml (item #8): ghcr.io/dozenos/dozenos-build:rolling,
-  # /dozenos + /dozenos-rebrand mounts, upload deb-<unit> artifacts -- plus
-  # the linux-kernel-family special case described above.
-  # ------------------------------------------------------------------------- #
+  # build: the matrix is exactly resolve's deduped build-unit set. Same
+  # build shape as ../rebuild-packages.yml (container
+  # ghcr.io/dozenos/dozenos-build:rolling, /dozenos + /dozenos-rebrand
+  # mounts, deb-<unit> artifact upload).
   build:
     needs: resolve
     if: needs.resolve.outputs.any == 'true'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      # Each matrix entry is a build-UNIT object, not a bare node name (item
-      # #30 fix): {"recipe": "<dir>"} for a generic C2 recipe, or
-      # {"recipe": "linux-kernel", "kernel_blocks": [...]} for the (at most
-      # one, always deduped) linux-kernel-family entry.
       matrix:
         unit: ${{ fromJson(needs.resolve.outputs.matrix) }}
     steps:
@@ -228,10 +134,7 @@ jobs:
 
       # Required for every C2 recipe's `pre_build_hook =
       # "/dozenos-rebrand/rename-transform.sh ."` (see
-      # ../rebuild-packages.yml's own comment) -- same absolute-path
-      # requirement applies whether the build reached this package through a
-      # push to dozenos-build itself (item #8) or, as here, an incremental
-      # dispatch from a dependency mirror (item #15).
+      # ../rebuild-packages.yml's comment).
       - name: Mint GitHub App token (dozenos-rebrand checkout)
         id: app_token
         uses: actions/create-github-app-token@v3
@@ -248,14 +151,10 @@ jobs:
           token: ${{ steps.app_token.outputs.token }}
           path: dozenos-rebrand
 
-      # ----------------------------------------------------------------- #
-      # deb-cache (dozenos-rebrand/DEB-CACHE.md): probe by content key
-      # before building; a hit means this unit's inputs are all unchanged
-      # (e.g. an idempotent re-dispatch, or two mirrors of the same unit
-      # dispatching back-to-back) and the stored full .deb set is
-      # downloaded instead of rebuilt. Every failure mode degrades to the
-      # normal rebuild, never to a wrong artifact.
-      # ----------------------------------------------------------------- #
+      # deb-cache (dozenos-rebrand/DEB-CACHE.md): a hit means this unit's
+      # inputs are all unchanged (e.g. an idempotent re-dispatch) and the
+      # stored full .deb set is downloaded instead of rebuilt. Every failure
+      # mode degrades to the normal rebuild, never to a wrong artifact.
       - name: Compute deb-cache key
         id: cachekey
         run: |
@@ -289,32 +188,22 @@ jobs:
           fi
 
       # Neutral /dozenos mount + neutral dozenos_bld build user (see
-      # ../../../MLNX-AND-DWARF.md #25) applies identically to every matrix
-      # entry here, kernel/OOT included -- there is no separate upstream-org-
-      # mounted code path anywhere in this workflow to accidentally take.
+      # ../../../MLNX-AND-DWARF.md) applies identically to every matrix
+      # entry here, kernel/OOT included.
       - name: Build ${{ matrix.unit.recipe }}
         if: steps.probe.outputs.hit != 'true'
         run: |
           set -euo pipefail
           RECIPE="${{ matrix.unit.recipe }}"
           if [ "$RECIPE" = "linux-kernel" ]; then
-            # linux-kernel family: ONE build.py invocation, NO --packages
-            # filter -- the FULL family (kernel + every OOT module + vpp),
-            # exactly like the image build's own linux-kernel leg.
-            #
-            # This deliberately SUPERSEDES item #30's --packages narrowing
-            # (build only the resolved kernel_blocks) as of the deb-cache
-            # (2026-07-09): the narrowed build's .deb set is a SUBSET of the
-            # full family, so it could never be stored (a cache entry
-            # claiming the full unit while holding a subset would hand the
-            # image build an ISO missing NIC-driver debs), and with image
-            # builds now trigger-based the full family got rebuilt minutes
-            # later on the image side anyway -- narrow-then-full is strictly
-            # more total compute than full-once-then-cache-hit. Building the
-            # full family here makes the output storable; the image build
-            # then hits it. matrix.unit.kernel_blocks is still emitted by
-            # nodes-to-build-units.sh (and useful as run metadata for WHY
-            # this unit resolved) but no longer narrows the build.
+            # FULL-family build (no --packages narrowing to the resolved
+            # kernel_blocks): a narrowed subset could never be stored in the
+            # deb-cache -- its tag would claim the full unit while holding a
+            # subset, handing the image build an ISO missing NIC-driver debs
+            # -- and the image build rebuilds the full family minutes later
+            # anyway, so narrow-then-full costs strictly more total compute
+            # than full-once-then-cache-hit. kernel_blocks stays useful as
+            # metadata for WHY this unit resolved.
             echo "I: linux-kernel FULL-family build (resolved trigger blocks: ${{ join(matrix.unit.kernel_blocks, ' ') }})"
             docker run --rm \
               -v "${{ github.workspace }}/dozenos-build:/dozenos" \
@@ -331,16 +220,12 @@ jobs:
               bash -c "cd scripts/package-build/$RECIPE && python3 ../build.py"
           fi
 
-      # Store into the deb cache so the image build (which computes the
-      # SAME key from the same inputs) hits what this dispatch just built --
-      # every incremental rebuild pre-warms the image build's full set.
-      # linux-kernel included: since the build step above builds the FULL
-      # family (the item-#30 --packages narrowing was dropped with the
-      # deb-cache, see that step's comment), its output is a complete,
-      # storable unit exactly like the image build's own kernel leg. Token
-      # is minted here, AFTER the (multi-hour, for kernel) build, so the
-      # leg cannot outlive the ~1h token; continue-on-error because a cache
-      # write failure must never fail the rebuild itself.
+      # Store so the image build (same key from the same inputs) hits what
+      # this dispatch just built -- every incremental rebuild pre-warms the
+      # image build's full set. Token minted here, AFTER the (multi-hour,
+      # for kernel) build, so the leg cannot outlive the ~1h token;
+      # continue-on-error because a cache write failure must never fail the
+      # rebuild itself.
       - name: Mint GitHub App token (deb-cache store)
         id: cache_token
         if: steps.cachekey.outputs.key != '' && steps.probe.outputs.hit != 'true'
@@ -373,28 +258,10 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
-  # ------------------------------------------------------------------------- #
-  # Job C: trigger-iso -- fire an ISO rebuild off the just-updated debs.
-  #
-  # DECISION: primarily trigger the IN-REPO `package-smoketest.yml` (item
-  # #13's ISO integration workflow, already lives in this same dozenos-build
-  # repo, already builds a real ISO and best-effort-merges recent deb-*
-  # artifacts into an ephemeral apt repo, see ../../../ISO-BUILD.md). That
-  # workflow already exists and already runs a real `build-dozenos-image`
-  # today; a same-repo `workflow_dispatch` needs only the job's own
-  # GITHUB_TOKEN (with `actions: write`), no cross-repo credential.
-  #
-  # dozenos/dozenos-nightly-build (item #17) is NOT yet created (see
-  # ../../../DISTRIBUTION.md/../../../WORKFLOW-POLICY.md) -- once it exists,
-  # it is the "full, guaranteed-fresh" nightly counterpart
-  # (../../../ISO-BUILD.md §5's own "what item #17 should do instead" note).
-  # This job ALSO best-effort-notifies it by name via a runtime-minted org
-  # GitHub App token (cross-repo dispatch needs a cross-repo credential, not
-  # GITHUB_TOKEN -- see ../../../CI-SECRETS.md §4), guarded with
-  # `continue-on-error: true` so a 404
-  # against a not-yet-existing repo never fails this job; once item #17
-  # lands, this step starts working with zero changes needed here.
-  # ------------------------------------------------------------------------- #
+  # trigger-iso: fire ISO rebuilds off the just-updated debs. The in-repo
+  # package-smoketest.yml dispatch needs only GITHUB_TOKEN (same-repo, with
+  # `actions: write`); the dozenos-nightly-build notify is cross-repo and
+  # uses an App token.
   trigger-iso:
     needs: [resolve, build]
     runs-on: ubuntu-latest
@@ -420,7 +287,9 @@ jobs:
           owner: dozenos
           repositories: dozenos-nightly-build
 
-      - name: Best-effort notify dozenos-nightly-build (item #17, not yet created)
+      # Best-effort (continue-on-error): a failed dispatch must never fail
+      # the rebuild that already succeeded.
+      - name: Best-effort notify dozenos-nightly-build
         continue-on-error: true
         env:
           GH_TOKEN: ${{ steps.app_token.outputs.token }}
@@ -433,5 +302,5 @@ jobs:
             -F "client_payload[package]=$PACKAGE" 2>&1; then
             echo "I: notified dozenos/dozenos-nightly-build"
           else
-            echo "I: dozenos/dozenos-nightly-build dispatch failed -- expected until item #17 creates that repo; non-fatal (continue-on-error)"
+            echo "I: dozenos/dozenos-nightly-build dispatch failed -- non-fatal (continue-on-error)"
           fi

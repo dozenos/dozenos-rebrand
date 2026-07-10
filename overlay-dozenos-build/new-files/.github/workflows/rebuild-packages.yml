@@ -1,45 +1,16 @@
 # DozenOS per-package (C2) rebuild workflow.
 #
-# Ported from the upstream build repo's own "trigger rebuild packages"
-# workflow (see dozenos-rebrand/WORKFLOW-POLICY.md item #8). The upstream
-# original is a *trigger only* workflow: a single `changes` job runs
-# `dorny/paths-filter` against a ~40-entry hand-maintained filter list (one
-# entry per `scripts/package-build/*` recipe), then a hand-copied `if` block
-# per package curl-dispatches a package-build run in a separate, private
-# org-scoped "reuse" repo (`secrets.REMOTE_OWNER`/`REMOTE_REUSE_REPO`) that
-# does the actual `dpkg-buildpackage`.
+# Replaces the upstream "trigger rebuild packages" workflow, which only
+# curl-dispatched builds into a private org-scoped "reuse" repo DozenOS does
+# not have: a discover job computes a dynamic matrix (no hand-maintained
+# per-package filter/if list) and a build job runs each package build
+# inline, in-repo. Same intent and same push-to-`rolling` trigger as
+# upstream.
 #
-# DozenOS has no such private reuse repo, and dozenos-rebrand/REBRAND-PLAN.md
-# (section 3b, "replace the upstream project's dispatch + hand-copied if")
-# already specced replacing this exact mechanism with a discover job that
-# computes a *dynamic* matrix (no hand-maintained per-package filter/if list
-# to keep in sync with scripts/package-build/*), feeding a real build job
-# that runs the package build inline, in-repo. This workflow implements that
-# design. Same intent (rebuild whichever C2 packages changed) and same
-# push-to-`rolling` trigger as the upstream original, different (dynamic,
-# self-contained) mechanism for "which packages" and "how they get built."
-#
-# `linux-kernel` is excluded here on purpose: its scripts/package-build/linux-kernel/build.py
-# is a bespoke driver that never reads `pre_build_hook` (see
-# dozenos-rebrand/wire-prebuild-hooks.sh's EXCLUDE_RECIPES and
-# dozenos-rebrand/overlay-dozenos-build/MANIFEST.md's "wire-prebuild-hooks.sh narrowing"
-# section) -- it is not a `build.py`-generic C2 recipe and needs its own,
-# separate build path, out of scope for this item.
-#
-# Publishing (apt repo / R2 upload) is intentionally NOT part of this
-# workflow: dozenos-rebrand/CI-SECRETS.md explicitly records "Not present: no
-# DOZENOS_MIRROR_URL / R2 / Cloudflare secrets. Those were dropped" -- so
-# there is currently nothing to publish to. This workflow only builds each
-# changed package and uploads the resulting .deb(s) as a workflow artifact;
-# wiring a publish step is a future item once apt/R2 hosting secrets exist.
-#
-# No package here is GPG-signed: the C2 `build_cmd` (see
-# scripts/package-build/*/package.toml) already builds with
-# `dpkg-buildpackage -us -uc` (unsigned source/changes), matching upstream.
-# dozenos-rebrand/CI-SECRETS.md's GPG role reconciliation confirms
-# `GPG_PRIVATE_KEY`'s role is narrower than the original plan (GitHub Release
-# / ISO artifact signing in the nightly-build workflow, item #17 -- not
-# per-package builds), so no GPG secret is referenced here.
+# Builds only -- no publishing (no apt/R2 hosting secrets exist, see
+# dozenos-rebrand/CI-SECRETS.md) and no GPG signing (the C2 build_cmd uses
+# `dpkg-buildpackage -us -uc`, matching upstream). Output .debs are uploaded
+# as workflow artifacts.
 name: Rebuild DozenOS packages
 
 on:
@@ -49,9 +20,7 @@ on:
     paths:
       - 'scripts/package-build/**'
       - '!scripts/package-build/linux-kernel/**'
-      # shim-signed is never auto-built here -- see the discover step's
-      # exclusion comment and dozenos-rebrand/SB-SIGNING.md (the ISO uses
-      # Debian's stock shim-signed; the DozenOS-CA shim chain is out of scope).
+      # shim-signed is never auto-built -- see the discover step's comment.
       - '!scripts/package-build/shim-signed/**'
   workflow_dispatch:
     inputs:
@@ -80,22 +49,22 @@ jobs:
         shell: bash
         env:
           # Via env, never ${{ }}-interpolated into the script body: the
-          # dispatch input is free text and must not be able to inject
-          # shell here. BEFORE/AFTER are GitHub-validated SHAs but ride
-          # along for uniformity.
+          # dispatch input is free text and must not be able to inject shell
+          # here. BEFORE/AFTER are GitHub-validated SHAs but ride along for
+          # uniformity.
           INPUT_PACKAGE_NAME: ${{ inputs.package_name }}
           BEFORE: ${{ github.event.before }}
           AFTER: ${{ github.event.after }}
         run: |
           set -euo pipefail
-          # linux-kernel and shim-signed are both excluded from the matrix:
-          # linux-kernel has its own bespoke multi-package build.py (never a
-          # single matrix leg here), and shim-signed can never build in this
-          # pipeline -- its Build-Depends pins `shim-unsigned (= <ver>+dozenos1)`,
-          # a Secure Boot shim DozenOS deliberately does NOT rebuild (the ISO
-          # uses Debian's stock shim-signed instead; see
-          # dozenos-rebrand/SB-SIGNING.md). The recipe dir stays in-tree for
-          # 1:1 upstream mirror parity but is not auto-built.
+          # linux-kernel is excluded: its bespoke multi-package build.py is
+          # not a generic C2 recipe and never reads pre_build_hook (see
+          # wire-prebuild-hooks.sh's EXCLUDE_RECIPES). shim-signed is
+          # excluded: its Build-Depends pins `shim-unsigned (= <ver>+dozenos1)`,
+          # a Secure Boot shim DozenOS deliberately does not rebuild (the
+          # ISO uses Debian's stock shim-signed -- see
+          # dozenos-rebrand/SB-SIGNING.md); the recipe dir stays in-tree
+          # only for 1:1 upstream mirror parity.
           discover_all() {
             find scripts/package-build -mindepth 1 -maxdepth 1 -type d \
               ! -name linux-kernel ! -name shim-signed -printf '%f\n' \
@@ -107,16 +76,13 @@ jobs:
             packages=$(discover_all)
           else
             # Diff-based discovery, with a FULL-SET fallback whenever the
-            # diff cannot be computed. The failure modes are real: a
-            # branch-creation push has an all-zeros BEFORE; a multi-commit
-            # push puts BEFORE outside fetch-depth:2 (the targeted
-            # `git fetch <sha>` below recovers exactly that case); a
-            # force-push can make BEFORE unreachable entirely. The old code
-            # swallowed every one of these with `|| true` and emitted an
-            # EMPTY matrix -- silently building NOTHING is the wrong
-            # fail-safe direction. Unknown scope must mean "rebuild
-            # everything": the deb-cache keeps that cheap (unchanged units
-            # probe-hit and skip their build).
+            # diff cannot be computed (all-zeros BEFORE on branch creation,
+            # BEFORE outside fetch-depth on a multi-commit push -- the
+            # targeted `git fetch <sha>` recovers that one -- or an
+            # unreachable BEFORE after a force-push). Unknown scope must
+            # mean "rebuild everything", never an empty matrix; the
+            # deb-cache keeps the full set cheap (unchanged units probe-hit
+            # and skip their build).
             diff_ok=1
             if [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
               diff_ok=0
@@ -159,10 +125,8 @@ jobs:
 
       # /dozenos-rebrand must exist at that exact absolute path inside the
       # build container: every C2 recipe's package.toml carries
-      # `pre_build_hook = "/dozenos-rebrand/rename-transform.sh ."`
-      # (injected by dozenos-rebrand/wire-prebuild-hooks.sh), which build.py
-      # runs with cwd = the freshly cloned package source, shelling out to
-      # that absolute path.
+      # `pre_build_hook = "/dozenos-rebrand/rename-transform.sh ."`, which
+      # build.py shells out to.
       - name: Mint GitHub App token (dozenos-rebrand checkout)
         id: app_token
         uses: actions/create-github-app-token@v3
@@ -179,17 +143,11 @@ jobs:
           token: ${{ steps.app_token.outputs.token }}
           path: dozenos-rebrand
 
-      # ----------------------------------------------------------------- #
-      # deb-cache (dozenos-rebrand/DEB-CACHE.md): same probe/store shape as
-      # rebuild-dispatch.yml. A push that changed this recipe makes the
-      # probe miss (the recipe tree hash is key material) and the store
-      # pre-warms the nightly; a push that did NOT change this recipe's
-      # inputs (e.g. a re-run, or a discover false-positive) hits and skips
-      # the rebuild. No linux-kernel special case needed here: this
-      # workflow's matrix structurally excludes linux-kernel (see the
-      # discover job), so every leg is a full recipe unit and safe to
-      # store. Every failure mode degrades to the normal rebuild.
-      # ----------------------------------------------------------------- #
+      # deb-cache (dozenos-rebrand/DEB-CACHE.md): a push that changed this
+      # recipe misses (the recipe tree hash is key material) and the store
+      # pre-warms the nightly; a push that did not change this recipe's
+      # inputs hits and skips the rebuild. Every failure mode degrades to
+      # the normal rebuild.
       - name: Compute deb-cache key
         id: cachekey
         run: |
