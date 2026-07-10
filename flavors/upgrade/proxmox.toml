@@ -1,0 +1,8 @@
+image_format = "iso"
+
+packages = ["qemu-guest-agent"]
+
+[boot_settings]
+console_type = "ttyS"
+console_num = "0"
+console_speed = "115200"

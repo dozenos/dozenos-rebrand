@@ -1,0 +1,16 @@
+image_format = ["qcow2"]
+
+disk_size = 4
+image_opts = "-c"
+
+packages = ["cloud-init", "qemu-guest-agent"]
+
+[boot_settings]
+console_type = "ttyS"
+console_num = "0"
+console_speed = "115200"
+
+[[includes_chroot]]
+path = "etc/cloud/cloud.cfg.d/90_dpkg.cfg"
+data = """datasource_list: [ NoCloud, ConfigDrive, None ]
+"""
