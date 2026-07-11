@@ -33,8 +33,11 @@ dozenos-build: overlay-dozenos-build/new-files/.github/workflows/rebuild-dispatc
        (transitive closure over dep-graph/dep-graph.json's reverse map)
     -> collapse the linux-kernel family (if present) into ONE matrix entry
     -> drop shim-signed (never buildable here: its Build-Depends pins a
-       shim-unsigned DozenOS deliberately does not rebuild -- SB-SIGNING.md;
-       same exclusion as rebuild-packages.yml's discover and nightly.yml)
+       shim-unsigned DozenOS deliberately does not rebuild -- SB-SIGNING.md)
+       and unionfs-fuse (its 3.6 lacks the /usr/bin/unionfs-fuse compat
+       name vyatta-cfg execs and would beat Debian's stock 1.0-1 in apt,
+       breaking every config commit in the image); same exclusions as
+       rebuild-packages.yml's discover and nightly.yml
     -> outputs.matrix = the resolved, incremental build set
   job B "build"  (needs: resolve, strategy.matrix over outputs.matrix)
     -> same shape as overlay-dozenos-build/new-files/.github/workflows/rebuild-packages.yml

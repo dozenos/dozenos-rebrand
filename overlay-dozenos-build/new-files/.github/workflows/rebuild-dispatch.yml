@@ -109,10 +109,13 @@ jobs:
           # shim-signed can never build here: its Build-Depends pins
           # `shim-unsigned (= <ver>+dozenos1)`, a Secure Boot shim DozenOS
           # deliberately does not rebuild (the ISO uses Debian's stock
-          # shim-signed -- dozenos-rebrand/SB-SIGNING.md). Same exclusion as
-          # ../rebuild-packages.yml's discover and nightly.yml's package
-          # matrix; without it every shim-signed mirror sync fails this run.
-          MATRIX=$(jq -c '[.[] | select(.recipe != "shim-signed")]' <<<"$MATRIX")
+          # shim-signed -- dozenos-rebrand/SB-SIGNING.md). unionfs-fuse must
+          # never be built either: its 3.6 lacks the /usr/bin/unionfs-fuse
+          # compat name vyatta-cfg execs, and apt would prefer it over
+          # Debian's stock 1.0-1, breaking every config commit in the image
+          # (see ../rebuild-packages.yml's discover comment). Same
+          # exclusions as rebuild-packages.yml and nightly.yml.
+          MATRIX=$(jq -c '[.[] | select(.recipe != "shim-signed" and .recipe != "unionfs-fuse")]' <<<"$MATRIX")
           echo "I: deduped build-unit matrix for '$PACKAGE': $MATRIX"
           echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
 

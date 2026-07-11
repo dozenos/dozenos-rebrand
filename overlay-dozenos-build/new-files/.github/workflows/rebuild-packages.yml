@@ -20,8 +20,10 @@ on:
     paths:
       - 'scripts/package-build/**'
       - '!scripts/package-build/linux-kernel/**'
-      # shim-signed is never auto-built -- see the discover step's comment.
+      # shim-signed/unionfs-fuse are never auto-built -- see the discover
+      # step's comment.
       - '!scripts/package-build/shim-signed/**'
+      - '!scripts/package-build/unionfs-fuse/**'
   workflow_dispatch:
     inputs:
       package_name:
@@ -64,10 +66,17 @@ jobs:
           # a Secure Boot shim DozenOS deliberately does not rebuild (the
           # ISO uses Debian's stock shim-signed -- see
           # dozenos-rebrand/SB-SIGNING.md); the recipe dir stays in-tree
-          # only for 1:1 upstream mirror parity.
+          # only for 1:1 upstream mirror parity. unionfs-fuse is excluded:
+          # the recipe's 3.6 ships only /usr/bin/unionfs, apt prefers it
+          # (3.6 > 1.0-1) over Debian bookworm's stock package, and losing
+          # Debian's /usr/bin/unionfs-fuse compat name breaks EVERY config
+          # commit (vyatta-cfg execs that exact path; the session unionfs
+          # mount ENOENTs and the committed active config degrades to the
+          # diff only). The ISO must install Debian's stock unionfs-fuse.
           discover_all() {
             find scripts/package-build -mindepth 1 -maxdepth 1 -type d \
-              ! -name linux-kernel ! -name shim-signed -printf '%f\n' \
+              ! -name linux-kernel ! -name shim-signed ! -name unionfs-fuse \
+              -printf '%f\n' \
               | sort | jq -R . | jq -sc .
           }
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "$INPUT_PACKAGE_NAME" ]; then
@@ -94,7 +103,7 @@ jobs:
             fi
             if [ "$diff_ok" = 1 ]; then
               changed=$(printf '%s\n' "$changed_files" \
-                | awk -F/ '{print $3}' | sort -u | grep -vxE 'linux-kernel|shim-signed' || true)
+                | awk -F/ '{print $3}' | sort -u | grep -vxE 'linux-kernel|shim-signed|unionfs-fuse' || true)
               packages=$(printf '%s\n' "$changed" | jq -R . | jq -sc 'map(select(length > 0))')
             else
               echo "::warning::cannot diff $BEFORE..$AFTER (branch creation or force-push) -- falling back to the FULL package set (deb-cache keeps unchanged units cheap)"
