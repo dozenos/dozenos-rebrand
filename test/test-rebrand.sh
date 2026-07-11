@@ -93,6 +93,10 @@ EOF
   # dependencies -- that line MUST still transform (2026-07-11 regression).
   printf 'all: clean copyright libvyosconfig\n\n.PHONY: copyright\ncopyright:\n\ttrue\n\nlibvyosconfig:\n\tmake -C libvyosconfig all\n' > "$t/src/lint-target-makefile"
 
+  # debian/copyright: whole file preserved byte-identical (PRESERVE_FILES),
+  # including non-`Copyright:` lines carrying vyos URLs/emails.
+  printf 'Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/\nSource: https://github.com/vyos/vyos-1x\nUpstream-Contact: VyOS maintainers <maintainers@vyos.net>\n\nFiles: *\nCopyright: VyOS Networks\nLicense: GPL-2+\n' > "$t/debian/copyright"
+
   # systemd service (name + content)
   printf '[Unit]\nDescription=VyOS router\n[Service]\nExecStart=/usr/libexec/vyos/init\n' \
     > "$t/src/systemd/vyos-router.service"
@@ -144,7 +148,8 @@ run_asserts() {
   # exemption rename-transform.sh's own verify_list applies)
   local n
   n=$({ grep -rIni vyos "$tree" --exclude-dir=.git || true; } \
-      | awk -F: '{ s=""; for (i=3; i<=NF; i++) s=s (i>3?":":"") $i;
+      | awk -F: '{ if ($1 ~ /(^|\/)debian\/copyright$/) next;
+                   s=""; for (i=3; i<=NF; i++) s=s (i>3?":":"") $i;
                    if (s ~ /Copyright|COPYRIGHT|©/) next; print }' \
       | wc -l | tr -d ' ')
   if [ "$n" -eq 0 ]; then ok "grep -rIi vyos == 0 (copyright lines exempt)"; else
@@ -186,6 +191,18 @@ run_asserts() {
     else
       bad "copyright preservation mismatch"
       cat "$tree/src/legal-header.py"
+    fi
+  fi
+
+  # (3c2) debian/copyright preserved whole (PRESERVE_FILES), including
+  # non-Copyright lines with vyos URLs/emails
+  if [ -f "$tree/debian/copyright" ]; then
+    if grep -qF 'Source: https://github.com/vyos/vyos-1x' "$tree/debian/copyright" \
+       && grep -qF 'Upstream-Contact: VyOS maintainers <maintainers@vyos.net>' "$tree/debian/copyright"; then
+      ok "debian/copyright preserved byte-identical (PRESERVE_FILES)"
+    else
+      bad "debian/copyright was transformed"
+      cat "$tree/debian/copyright"
     fi
   fi
 
@@ -246,13 +263,24 @@ snap1=$(snapshot "$TREE")
 run_asserts "$TREE" "after 1st run"
 
 # --- run twice (idempotency) ---
+# mtimes must survive a no-op pass too: `sed -i` rewrites unconditionally,
+# and a stat-dirtied tree fails cloud-init's `git diff-index HEAD` check
+# (2026-07-11 regression -- files with preserved-copyright vyos lines).
+mtimes1=$(find "$TREE" -type f -not -path '*/.git/*' -printf '%p %T@\n' | LC_ALL=C sort)
 "$SCRIPT" "$TREE"
 snap2=$(snapshot "$TREE")
+mtimes2=$(find "$TREE" -type f -not -path '*/.git/*' -printf '%p %T@\n' | LC_ALL=C sort)
 if [ "$snap1" = "$snap2" ]; then
   ok "idempotent (2nd run byte-identical)"
 else
   bad "NOT idempotent (2nd run differs)"
   diff <(printf '%s\n' "$snap1") <(printf '%s\n' "$snap2") | head
+fi
+if [ "$mtimes1" = "$mtimes2" ]; then
+  ok "no-op pass leaves mtimes untouched (stat-idempotent)"
+else
+  bad "no-op pass rewrote unchanged files (mtime drift)"
+  diff <(printf '%s\n' "$mtimes1") <(printf '%s\n' "$mtimes2") | head
 fi
 run_asserts "$TREE" "after 2nd run"
 

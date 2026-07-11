@@ -106,8 +106,14 @@ apply_forms() { printf '%s' "$1" | sed "${SED_ARGS[@]}"; }
 # -i matches all four vyos forms. `|| true` absorbs grep's exit-1 on
 # no-match so pipefail/set -e do not abort on a clean tree.
 verify_list() {
+  local pf_ere="" p
+  for p in "${PRESERVE_FILES[@]:-}"; do
+    [ -n "$p" ] || continue
+    pf_ere="${pf_ere:+$pf_ere|}(^|/)${p//./\\.}$"
+  done
   { grep -rIni vyos "$TARGET" --exclude-dir=.git 2>/dev/null || true; } \
-    | awk -F: -v g="${COPYRIGHT_LINE_GUARD:-}" '{
+    | awk -F: -v g="${COPYRIGHT_LINE_GUARD:-}" -v pf="$pf_ere" '{
+        if (pf != "" && $1 ~ pf) next
         s = ""
         for (i = 3; i <= NF; i++) s = s (i > 3 ? ":" : "") $i
         if (g != "" && s ~ g) next
@@ -130,10 +136,29 @@ fi
 #    -type f excludes symlinks; grep -Iq . skips binary; grep -qi vyos limits
 #    edits to files that actually contain a form (vyatta-only files untouched).
 # ---------------------------------------------------------------------------
+preserved_file() {
+  local rel="${1#"$TARGET"/}" p
+  for p in "${PRESERVE_FILES[@]:-}"; do
+    [ -n "$p" ] || continue
+    case "$rel" in "$p"|*/"$p") return 0 ;; esac
+  done
+  return 1
+}
+
+# Write a file ONLY when its content actually changes: `sed -i` rewrites
+# unconditionally (new mtime even on a no-op), and with copyright lines now
+# legitimately carrying `vyos`, a second pass would stat-dirty every such
+# file -- cloud-init's make-tarball checks `git diff-index HEAD` (stat
+# cache, not content) and hard-fails on that. `cat >` keeps the inode and
+# permissions.
 while IFS= read -r -d '' f; do
   grep -Iq . "$f"      || continue   # skip binary
   grep -qi 'vyos' "$f" || continue   # skip files with no vyos form
-  sed -i "${SED_ARGS[@]}" "$f"
+  preserved_file "$f"  && continue   # legal files kept byte-identical
+  tmp=$(mktemp)
+  sed "${SED_ARGS[@]}" "$f" > "$tmp"
+  cmp -s "$tmp" "$f" || cat "$tmp" > "$f"
+  rm -f "$tmp"
 done < <(find "$TARGET" -type f -not -path '*/.git/*' -print0)
 
 # ---------------------------------------------------------------------------
