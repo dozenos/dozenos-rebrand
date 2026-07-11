@@ -204,9 +204,13 @@ for raw in files:
     m = g.search(lines[first])
     prefix = lines[first][:m.start()]
     rest = lines[first][m.end():]
-    # comment leader must be non-empty and contain a comment character;
-    # a notice line that closes its own comment cannot host a sibling.
-    if not prefix.strip() or not re.fullmatch(r"""[\s#;*/!%"'.-]+""", prefix):
+    # The leader must be a REAL comment leader, nothing else: an early
+    # version accepted quotes and inserted the marker into an OCaml string
+    # concatenation ("Copyright ... VyOS ..." ^), breaking the build with a
+    # syntax error. Recognised leaders: #, ;, //, --, or a C-block interior
+    # '*'; anything fancier (vimscript ", man .\", XML <!--, OCaml (*) is
+    # skipped -- fail-open, a missing marker is legal.
+    if not re.fullmatch(r'\s*(#+|;+|//+|--|\*)\s*', prefix):
         continue
     if re.search(r'(\*/|-->|\?>)', rest):
         continue

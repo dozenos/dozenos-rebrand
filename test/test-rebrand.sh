@@ -93,6 +93,15 @@ EOF
   # dependencies -- that line MUST still transform (2026-07-11 regression).
   printf 'all: clean copyright libvyosconfig\n\n.PHONY: copyright\ncopyright:\n\ttrue\n\nlibvyosconfig:\n\tmake -C libvyosconfig all\n' > "$t/src/lint-target-makefile"
 
+  # Copyright INSIDE a string literal must NOT attract a marker: an OCaml
+  # string concatenation broke with a syntax error when the marker landed
+  # inside it (2026-07-11 regression, vyconf src/version.ml).
+  printf 'let banner =\n  "Copyright 2017 VyOS maintainers and contributors\\n" ^\n  "free software"\nlet m = Vyos_config.load\n' > "$t/src/string-literal.ml"
+
+  # A YAML list item starting with "- Copyright" is data, not a comment --
+  # single "-" is not a recognised comment leader.
+  printf 'notices:\n  - Copyright 2020 VyOS maintainers\n  - vyos extra\n' > "$t/src/data-list.yaml"
+
   # debian/copyright: whole file preserved byte-identical (PRESERVE_FILES),
   # including non-`Copyright:` lines carrying vyos URLs/emails.
   printf 'Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/\nSource: https://github.com/vyos/vyos-1x\nUpstream-Contact: VyOS maintainers <maintainers@vyos.net>\n\nFiles: *\nCopyright: VyOS Networks\nLicense: GPL-2+\n' > "$t/debian/copyright"
@@ -212,6 +221,18 @@ run_asserts() {
     else
       bad "debian/copyright was transformed"
       cat "$tree/debian/copyright"
+    fi
+  fi
+
+  # (3c3) no marker inside string literals or data lists
+  if [ -f "$tree/src/string-literal.ml" ]; then
+    if ! grep -q 'Modifications Copyright' "$tree/src/string-literal.ml" \
+       && ! grep -q 'Modifications Copyright' "$tree/src/data-list.yaml" \
+       && grep -q 'Dozenos_config.load' "$tree/src/string-literal.ml"; then
+      ok "no marker in string literals / data lists (non-comment leaders skipped)"
+    else
+      bad "marker leaked into a non-comment context"
+      grep -n 'Modifications' "$tree/src/string-literal.ml" "$tree/src/data-list.yaml"
     fi
   fi
 
