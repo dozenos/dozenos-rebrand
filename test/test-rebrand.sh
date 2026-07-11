@@ -83,6 +83,9 @@ EOF
   # Python namespace
   printf 'import vyos\nfrom vyos.config import Config\nx = vyos.defaults.X\n' > "$t/python/vyos/config.py"
 
+  # Corporate-entity phrase (PHRASE_REWRITES: "VyOS Inc." -> "DozenOS Org.")
+  printf '# Copyright (C) VyOS Inc.\n# maintained by the VyOS team\n' > "$t/src/copyright-header.py"
+
   # systemd service (name + content)
   printf '[Unit]\nDescription=VyOS router\n[Service]\nExecStart=/usr/libexec/vyos/init\n' \
     > "$t/src/systemd/vyos-router.service"
@@ -161,6 +164,18 @@ run_asserts() {
     ok "file & directory names transformed"
   elif [ -f "$tree/etc/vyatta-notes.txt" ]; then
     bad "expected renamed paths missing (libdozenosconfig0.install / usr/share/dozenos / dozenos-router.service)"
+  fi
+
+  # (3b) corporate-entity phrase rewritten, not four-formed
+  if [ -f "$tree/src/copyright-header.py" ]; then
+    if grep -q 'Copyright (C) DozenOS Org\.' "$tree/src/copyright-header.py" \
+       && ! grep -q 'DozenOS Inc\.' "$tree/src/copyright-header.py" \
+       && grep -q 'maintained by the DozenOS team' "$tree/src/copyright-header.py"; then
+      ok "\"VyOS Inc.\" -> \"DozenOS Org.\" (PHRASE_REWRITES)"
+    else
+      bad "\"VyOS Inc.\" was not rewritten to \"DozenOS Org.\""
+      cat "$tree/src/copyright-header.py"
+    fi
   fi
 
   # (4) binary skipped -- logo.bin still has raw 'vyos' bytes untouched

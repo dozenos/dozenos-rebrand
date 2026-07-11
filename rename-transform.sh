@@ -61,11 +61,12 @@ source "$CONF"
 [ "${#REBRAND_FORMS[@]}" -gt 0 ] || die "REBRAND_FORMS empty in $CONF"
 
 # Build the sed program once from the data file.
-# Email rewrites run FIRST so maintainer addresses are normalised to the
-# non-existent placeholder domain (dozenos.local) before the generic four-form
-# rules run -- leaving no `vyos` in the address and no real `dozenos.*` domain.
+# Email and literal-phrase rewrites run FIRST so their spans are normalised
+# (maintainer addresses -> dozenos.local, "VyOS Inc." -> "DozenOS Org.")
+# before the generic four-form rules run -- leaving no `vyos` behind for the
+# four-form pass to mis-handle.
 SED_ARGS=()
-for e in "${EMAIL_REWRITES[@]:-}"; do
+for e in "${EMAIL_REWRITES[@]:-}" "${PHRASE_REWRITES[@]:-}"; do
   [ -n "$e" ] && SED_ARGS+=( -e "$e" )
 done
 for pair in "${REBRAND_FORMS[@]}"; do
