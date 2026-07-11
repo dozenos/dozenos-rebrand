@@ -173,6 +173,10 @@ EOF
     "$t/data/certificates/dozenos-prod-2025-linux.pem" -days 1 -nodes \
     -subj "/CN=VyOS Networks Secure Boot Signer 2025" >/dev/null 2>&1
 
+  # -- value-fixes/suffix-openssl-version.sh target --
+  mkdir -p "$t/scripts/package-build/openssl"
+  printf '[[packages]]\nname = "openssl"\ncommit_id = "debian/openssl-3.0.20-1_deb12u2"\nscm_url = "https://salsa.debian.org/debian/openssl.git"\nbuild_cmd = "dpkg-buildpackage -us -uc -tc -b"\n' > "$t/scripts/package-build/openssl/package.toml"
+
   # -- value-fixes/replace-eula.sh target: transformed upstream EULA block --
   mkdir -p "$t/data/build-types"
   cat > "$t/data/build-types/development.toml" <<'EOF'
@@ -331,6 +335,12 @@ assert_both_modes_state() {
   else
     bad "$label: AGENTS.md refs not reverted"; cat "$tree/AGENTS.md"
   fi
+  if grep -qF "sed -i '1s/)/+dozenos1)/' debian/changelog && dpkg-buildpackage" "$tree/scripts/package-build/openssl/package.toml"; then
+    ok "$label: openssl build_cmd carries the +dozenos1 version suffix (both modes)"
+  else
+    bad "$label: openssl version suffix missing"; grep build_cmd "$tree/scripts/package-build/openssl/package.toml"
+  fi
+
   if grep -qF 'DozenOS END USER NOTICE' "$tree/data/build-types/development.toml" \
      && ! grep -qE 'Kirkham|DozenOS Inc' "$tree/data/build-types/development.toml"; then
     ok "$label: upstream EULA payload replaced by authored notice (both modes)"
