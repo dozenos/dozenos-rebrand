@@ -88,6 +88,11 @@ EOF
   # ordinary content (four-form applies).
   printf '# Copyright (C) VyOS Inc. <maintainers@vyos.io>\n# maintained by the VyOS team\n' > "$t/src/legal-header.py"
 
+  # Lowercase `copyright` is NOT a legal notice: upstream vyos-1x's Makefile
+  # has a `copyright` lint target on the same line as `libvyosconfig`
+  # dependencies -- that line MUST still transform (2026-07-11 regression).
+  printf 'all: clean copyright libvyosconfig\n\n.PHONY: copyright\ncopyright:\n\ttrue\n\nlibvyosconfig:\n\tmake -C libvyosconfig all\n' > "$t/src/lint-target-makefile"
+
   # systemd service (name + content)
   printf '[Unit]\nDescription=VyOS router\n[Service]\nExecStart=/usr/libexec/vyos/init\n' \
     > "$t/src/systemd/vyos-router.service"
@@ -140,7 +145,7 @@ run_asserts() {
   local n
   n=$({ grep -rIni vyos "$tree" --exclude-dir=.git || true; } \
       | awk -F: '{ s=""; for (i=3; i<=NF; i++) s=s (i>3?":":"") $i;
-                   if (tolower(s) ~ /copyright/) next; print }' \
+                   if (s ~ /Copyright|COPYRIGHT|©/) next; print }' \
       | wc -l | tr -d ' ')
   if [ "$n" -eq 0 ]; then ok "grep -rIi vyos == 0 (copyright lines exempt)"; else
     bad "grep -rIi vyos == $n (expected 0, copyright lines exempt)"
@@ -181,6 +186,17 @@ run_asserts() {
     else
       bad "copyright preservation mismatch"
       cat "$tree/src/legal-header.py"
+    fi
+  fi
+
+  # (3c) lowercase `copyright` lint-target line still transforms
+  if [ -f "$tree/src/lint-target-makefile" ]; then
+    if grep -qF 'all: clean copyright libdozenosconfig' "$tree/src/lint-target-makefile" \
+       && ! grep -q 'libvyosconfig' "$tree/src/lint-target-makefile"; then
+      ok "lowercase copyright lint-target line transformed (guard is case-sensitive)"
+    else
+      bad "lowercase copyright line was wrongly preserved"
+      cat "$tree/src/lint-target-makefile"
     fi
   fi
 

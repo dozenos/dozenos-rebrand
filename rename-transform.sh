@@ -68,8 +68,11 @@ source "$CONF"
 # runs under the copyright-line guard: lines containing
 # COPYRIGHT_LINE_GUARD (case-insensitive) are legal notices preserved
 # byte-identical (rebrand-map.conf's rationale).
+# COPYRIGHT_LINE_GUARD is an ERE (for awk in verify_list); sed addresses
+# here are BRE, so alternation pipes need escaping. Case-sensitive by
+# design -- see rebrand-map.conf.
 GUARD=""
-[ -n "${COPYRIGHT_LINE_GUARD:-}" ] && GUARD="/${COPYRIGHT_LINE_GUARD}/I!"
+[ -n "${COPYRIGHT_LINE_GUARD:-}" ] && GUARD="/${COPYRIGHT_LINE_GUARD//|/\\|}/!"
 SED_ARGS=()
 for e in "${EMAIL_REWRITES[@]:-}"; do
   [ -n "$e" ] && SED_ARGS+=( -e "${GUARD}${e}" )
@@ -107,7 +110,7 @@ verify_list() {
     | awk -F: -v g="${COPYRIGHT_LINE_GUARD:-}" '{
         s = ""
         for (i = 3; i <= NF; i++) s = s (i > 3 ? ":" : "") $i
-        if (g != "" && tolower(s) ~ tolower(g)) next
+        if (g != "" && s ~ g) next
         print
       }'
 }
