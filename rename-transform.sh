@@ -62,16 +62,16 @@ source "$CONF"
 [ "${#REBRAND_FORMS[@]}" -gt 0 ] || die "REBRAND_FORMS empty in $CONF"
 
 # Build the sed program once from the data file.
-# Email and literal-phrase rewrites run FIRST so their spans are normalised
-# (maintainer addresses -> dozenos.local, "VyOS Inc." -> "DozenOS Org.")
-# before the generic four-form rules run -- leaving no `vyos` behind for the
-# four-form pass to mis-handle. Every rule runs under the copyright-line
-# guard: lines containing COPYRIGHT_LINE_GUARD (case-insensitive) are legal
-# notices preserved byte-identical (rebrand-map.conf's rationale).
+# Email rewrites run FIRST so maintainer addresses are normalised to the
+# non-existent placeholder domain (dozenos.local) before the generic
+# four-form rules run -- leaving no `vyos` left in the address. Every rule
+# runs under the copyright-line guard: lines containing
+# COPYRIGHT_LINE_GUARD (case-insensitive) are legal notices preserved
+# byte-identical (rebrand-map.conf's rationale).
 GUARD=""
 [ -n "${COPYRIGHT_LINE_GUARD:-}" ] && GUARD="/${COPYRIGHT_LINE_GUARD}/I!"
 SED_ARGS=()
-for e in "${EMAIL_REWRITES[@]:-}" "${PHRASE_REWRITES[@]:-}"; do
+for e in "${EMAIL_REWRITES[@]:-}"; do
   [ -n "$e" ] && SED_ARGS+=( -e "${GUARD}${e}" )
 done
 for pair in "${REBRAND_FORMS[@]}"; do

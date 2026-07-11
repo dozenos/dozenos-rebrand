@@ -83,11 +83,10 @@ EOF
   # Python namespace
   printf 'import vyos\nfrom vyos.config import Config\nx = vyos.defaults.X\n' > "$t/python/vyos/config.py"
 
-  # Copyright-notice preservation + corporate-entity phrase: line 1 is a
-  # legal notice (COPYRIGHT_LINE_GUARD -> preserved verbatim, email
-  # included); lines 2-3 are ordinary content (four-form + PHRASE_REWRITES
-  # apply).
-  printf '# Copyright (C) VyOS Inc. <maintainers@vyos.io>\n# maintained by the VyOS team\n# sponsored by VyOS Inc. events\n' > "$t/src/legal-header.py"
+  # Copyright-notice preservation: line 1 is a legal notice
+  # (COPYRIGHT_LINE_GUARD -> preserved verbatim, email included); line 2 is
+  # ordinary content (four-form applies).
+  printf '# Copyright (C) VyOS Inc. <maintainers@vyos.io>\n# maintained by the VyOS team\n' > "$t/src/legal-header.py"
 
   # systemd service (name + content)
   printf '[Unit]\nDescription=VyOS router\n[Service]\nExecStart=/usr/libexec/vyos/init\n' \
@@ -174,16 +173,13 @@ run_asserts() {
     bad "expected renamed paths missing (libdozenosconfig0.install / usr/share/dozenos / dozenos-router.service)"
   fi
 
-  # (3b) copyright notice preserved verbatim; non-copyright lines
-  # transformed, with "VyOS Inc." phrase-rewritten rather than four-formed
+  # (3b) copyright notice preserved verbatim; non-copyright lines transformed
   if [ -f "$tree/src/legal-header.py" ]; then
     if grep -qF 'Copyright (C) VyOS Inc. <maintainers@vyos.io>' "$tree/src/legal-header.py" \
-       && grep -q 'maintained by the DozenOS team' "$tree/src/legal-header.py" \
-       && grep -q 'sponsored by DozenOS Org\. events' "$tree/src/legal-header.py" \
-       && ! grep -q 'DozenOS Inc\.' "$tree/src/legal-header.py"; then
-      ok "copyright line preserved; \"VyOS Inc.\" -> \"DozenOS Org.\" elsewhere"
+       && grep -q 'maintained by the DozenOS team' "$tree/src/legal-header.py"; then
+      ok "copyright line preserved verbatim; non-copyright line transformed"
     else
-      bad "copyright preservation / phrase rewrite mismatch"
+      bad "copyright preservation mismatch"
       cat "$tree/src/legal-header.py"
     fi
   fi
