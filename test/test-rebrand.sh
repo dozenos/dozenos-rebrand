@@ -83,8 +83,11 @@ EOF
   # Python namespace
   printf 'import vyos\nfrom vyos.config import Config\nx = vyos.defaults.X\n' > "$t/python/vyos/config.py"
 
-  # Corporate-entity phrase (PHRASE_REWRITES: "VyOS Inc." -> "DozenOS Org.")
-  printf '# Copyright (C) VyOS Inc.\n# maintained by the VyOS team\n' > "$t/src/copyright-header.py"
+  # Copyright-notice preservation + corporate-entity phrase: line 1 is a
+  # legal notice (COPYRIGHT_LINE_GUARD -> preserved verbatim, email
+  # included); lines 2-3 are ordinary content (four-form + PHRASE_REWRITES
+  # apply).
+  printf '# Copyright (C) VyOS Inc. <maintainers@vyos.io>\n# maintained by the VyOS team\n# sponsored by VyOS Inc. events\n' > "$t/src/legal-header.py"
 
   # systemd service (name + content)
   printf '[Unit]\nDescription=VyOS router\n[Service]\nExecStart=/usr/libexec/vyos/init\n' \
@@ -132,11 +135,16 @@ run_asserts() {
 
   echo "== $label =="
 
-  # (1) zero vyos, case-insensitive, excluding .git
+  # (1) zero vyos, case-insensitive, excluding .git; copyright-notice lines
+  # exempt (preserved by design -- COPYRIGHT_LINE_GUARD, same content-level
+  # exemption rename-transform.sh's own verify_list applies)
   local n
-  n=$({ grep -rIi vyos "$tree" --exclude-dir=.git || true; } | wc -l | tr -d ' ')
-  if [ "$n" -eq 0 ]; then ok "grep -rIi vyos == 0"; else
-    bad "grep -rIi vyos == $n (expected 0)"
+  n=$({ grep -rIni vyos "$tree" --exclude-dir=.git || true; } \
+      | awk -F: '{ s=""; for (i=3; i<=NF; i++) s=s (i>3?":":"") $i;
+                   if (tolower(s) ~ /copyright/) next; print }' \
+      | wc -l | tr -d ' ')
+  if [ "$n" -eq 0 ]; then ok "grep -rIi vyos == 0 (copyright lines exempt)"; else
+    bad "grep -rIi vyos == $n (expected 0, copyright lines exempt)"
     grep -rIn vyos "$tree" --exclude-dir=.git | head
   fi
 
@@ -166,15 +174,17 @@ run_asserts() {
     bad "expected renamed paths missing (libdozenosconfig0.install / usr/share/dozenos / dozenos-router.service)"
   fi
 
-  # (3b) corporate-entity phrase rewritten, not four-formed
-  if [ -f "$tree/src/copyright-header.py" ]; then
-    if grep -q 'Copyright (C) DozenOS Org\.' "$tree/src/copyright-header.py" \
-       && ! grep -q 'DozenOS Inc\.' "$tree/src/copyright-header.py" \
-       && grep -q 'maintained by the DozenOS team' "$tree/src/copyright-header.py"; then
-      ok "\"VyOS Inc.\" -> \"DozenOS Org.\" (PHRASE_REWRITES)"
+  # (3b) copyright notice preserved verbatim; non-copyright lines
+  # transformed, with "VyOS Inc." phrase-rewritten rather than four-formed
+  if [ -f "$tree/src/legal-header.py" ]; then
+    if grep -qF 'Copyright (C) VyOS Inc. <maintainers@vyos.io>' "$tree/src/legal-header.py" \
+       && grep -q 'maintained by the DozenOS team' "$tree/src/legal-header.py" \
+       && grep -q 'sponsored by DozenOS Org\. events' "$tree/src/legal-header.py" \
+       && ! grep -q 'DozenOS Inc\.' "$tree/src/legal-header.py"; then
+      ok "copyright line preserved; \"VyOS Inc.\" -> \"DozenOS Org.\" elsewhere"
     else
-      bad "\"VyOS Inc.\" was not rewritten to \"DozenOS Org.\""
-      cat "$tree/src/copyright-header.py"
+      bad "copyright preservation / phrase rewrite mismatch"
+      cat "$tree/src/legal-header.py"
     fi
   fi
 

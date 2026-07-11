@@ -26,6 +26,7 @@
 # Usage:
 #   rename-transform.sh <target-tree> [--stamp <DATE.SHA>]
 #   rename-transform.sh <target-tree> --verify        # only: assert zero vyos
+#                                            (copyright-notice lines exempt)
 #
 # LOCAL ONLY -- this script never runs git.
 #
@@ -64,15 +65,19 @@ source "$CONF"
 # Email and literal-phrase rewrites run FIRST so their spans are normalised
 # (maintainer addresses -> dozenos.local, "VyOS Inc." -> "DozenOS Org.")
 # before the generic four-form rules run -- leaving no `vyos` behind for the
-# four-form pass to mis-handle.
+# four-form pass to mis-handle. Every rule runs under the copyright-line
+# guard: lines containing COPYRIGHT_LINE_GUARD (case-insensitive) are legal
+# notices preserved byte-identical (rebrand-map.conf's rationale).
+GUARD=""
+[ -n "${COPYRIGHT_LINE_GUARD:-}" ] && GUARD="/${COPYRIGHT_LINE_GUARD}/I!"
 SED_ARGS=()
 for e in "${EMAIL_REWRITES[@]:-}" "${PHRASE_REWRITES[@]:-}"; do
-  [ -n "$e" ] && SED_ARGS+=( -e "$e" )
+  [ -n "$e" ] && SED_ARGS+=( -e "${GUARD}${e}" )
 done
 for pair in "${REBRAND_FORMS[@]}"; do
   from="${pair%%=*}"
   to="${pair#*=}"
-  SED_ARGS+=( -e "s/${from}/${to}/g" )
+  SED_ARGS+=( -e "${GUARD}s/${from}/${to}/g" )
 done
 
 # Safety contract: no "from" token may be a substring of a preserved token,
@@ -88,24 +93,32 @@ done
 
 apply_forms() { printf '%s' "$1" | sed "${SED_ARGS[@]}"; }
 
-verify() {
-  # zero vyos (case-insensitive) over the shipped tree, excluding .git.
-  # `|| true` absorbs grep's exit-1 on no-match so pipefail/set -e do not abort
-  # on a clean tree (the success case).
-  { grep -rIi vyos "$TARGET" --exclude-dir=.git 2>/dev/null || true; } | wc -l | tr -d ' '
+# verify_list emits every residual as `<path>:<line>:<content>`, exempting
+# copyright-notice lines (matched on CONTENT, not path, so a file merely
+# NAMED *copyright* is still scanned) -- the transform preserves those lines
+# by design, see COPYRIGHT_LINE_GUARD in rebrand-map.conf. Count and FAIL
+# listing both come from this one function so they can never disagree
+# (mirror-push.sh's residuals_allowlisted() consumes the listing
+# line-by-line; every hit contributing to the count must appear in it).
+# -i matches all four vyos forms. `|| true` absorbs grep's exit-1 on
+# no-match so pipefail/set -e do not abort on a clean tree.
+verify_list() {
+  { grep -rIni vyos "$TARGET" --exclude-dir=.git 2>/dev/null || true; } \
+    | awk -F: -v g="${COPYRIGHT_LINE_GUARD:-}" '{
+        s = ""
+        for (i = 3; i <= NF; i++) s = s (i > 3 ? ":" : "") $i
+        if (g != "" && tolower(s) ~ tolower(g)) next
+        print
+      }'
 }
+
+verify() { verify_list | wc -l | tr -d ' '; }
 
 if [ "$VERIFY_ONLY" -eq 1 ]; then
   n=$(verify)
   if [ "$n" -eq 0 ]; then echo "verify: OK (0 residual vyos)"; exit 0; fi
   echo "verify: FAIL ($n residual vyos):" >&2
-  # -i to match verify()'s case-insensitive count above -- a case-sensitive
-  # listing here would silently omit a VyOS/VYOS/Vyos-form residual from the
-  # printed lines while still counting it in $n, which would in turn make
-  # mirror-push.sh's allowlist-diffing (residuals_allowlisted(), which reads
-  # this listing line-by-line) blind to it too. Every hit contributing to $n
-  # must appear in this listing.
-  grep -rIni vyos "$TARGET" --exclude-dir=.git >&2
+  verify_list >&2
   exit 1
 fi
 
