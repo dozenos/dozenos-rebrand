@@ -198,5 +198,7 @@ fi
 "$VALUE_FIXES/pin-toolchain-apt-source.sh" "$TARGET"
 "$VALUE_FIXES/pin-nonmirrored-org-refs.sh" "$TARGET"
 "$VALUE_FIXES/remove-committed-mok-cert.sh" "$TARGET"
+"$VALUE_FIXES/replace-eula.sh" "$TARGET"
+"$VALUE_FIXES/pin-project-urls.sh" "$TARGET"
 
 echo "apply-overlay: done (mode=$MODE)"

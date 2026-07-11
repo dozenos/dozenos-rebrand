@@ -172,6 +172,34 @@ EOF
   openssl req -x509 -newkey rsa:2048 -keyout /dev/null -out \
     "$t/data/certificates/dozenos-prod-2025-linux.pem" -days 1 -nodes \
     -subj "/CN=VyOS Networks Secure Boot Signer 2025" >/dev/null 2>&1
+
+  # -- value-fixes/replace-eula.sh target: transformed upstream EULA block --
+  mkdir -p "$t/data/build-types"
+  cat > "$t/data/build-types/development.toml" <<'EOF'
+packages = [
+  "gdb"
+]
+
+[[includes_chroot]]
+  path = 'usr/share/dozenos/EULA'
+  data = '''
+DozenOS ROLLING RELEASE END USER LICENSE AGREEMENT
+
+I. This End-User License Agreement is a legal document between you and DozenOS Inc.
+(a company organized and existing under the laws of California,
+having its registered office at 12585 Kirkham Ct, Suite 1, Poway, California 92604)
+'''
+EOF
+
+  # -- value-fixes/pin-project-urls.sh target: transformed defaults URLs --
+  cat > "$t/data/defaults.toml" <<'EOF'
+kernel_version = "6.18.38"
+website_url = "https://dozenos.io"
+support_url = "https://support.dozenos.io"
+bugtracker_url = "https://dozenos.dev"
+documentation_url = "https://docs.dozenos.io/en/latest"
+project_news_url = "https://blog.dozenos.io"
+EOF
 }
 
 assert_ci_state() {
@@ -303,6 +331,20 @@ assert_both_modes_state() {
   else
     bad "$label: AGENTS.md refs not reverted"; cat "$tree/AGENTS.md"
   fi
+  if grep -qF 'DozenOS END USER NOTICE' "$tree/data/build-types/development.toml" \
+     && ! grep -qE 'Kirkham|DozenOS Inc' "$tree/data/build-types/development.toml"; then
+    ok "$label: upstream EULA payload replaced by authored notice (both modes)"
+  else
+    bad "$label: EULA payload not replaced"; grep -n 'Inc\|NOTICE' "$tree/data/build-types/development.toml"
+  fi
+
+  if grep -qF 'website_url = "https://dozenos.github.io/dozenos-nightly-build"' "$tree/data/defaults.toml" \
+     && ! grep -qE 'dozenos\.io|dozenos\.dev' "$tree/data/defaults.toml"; then
+    ok "$label: project URLs pinned to org-controlled hosts (both modes)"
+  else
+    bad "$label: project URLs not pinned"; grep '_url' "$tree/data/defaults.toml"
+  fi
+
   if grep -qF 'github.com/vyos/vyos.vyos.git' "$tree/scripts/ansible-install" \
      && ! grep -qF 'github.com/dozenos/dozenos.dozenos.git' "$tree/scripts/ansible-install"; then
     ok "$label: ansible-install dangling dozenos.dozenos collection ref reverted (both modes)"
