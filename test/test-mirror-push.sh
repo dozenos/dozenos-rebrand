@@ -486,6 +486,14 @@ if [ -d "$VYOS_BUILD_LOCAL/.git" ]; then
     bad "--build-repo: sync.yml was not generated"
   fi
 
+  if [ -f "$WORK_DIR5/clone/NOTICE" ] \
+     && grep -q "mechanically rebranded mirror" "$WORK_DIR5/clone/NOTICE" \
+     && ! grep -qi vyos "$WORK_DIR5/clone/NOTICE"; then
+    ok "--build-repo: NOTICE generated, zero-vyos"
+  else
+    bad "--build-repo: NOTICE missing or carries vyos"
+  fi
+
   for wf in build-docker-image.yml rebuild-packages.yml; do
     if [ -f "$WORK_DIR5/clone/.github/workflows/$wf" ]; then
       ok "--build-repo: $wf coexists alongside sync.yml"

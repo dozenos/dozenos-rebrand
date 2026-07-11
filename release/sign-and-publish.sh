@@ -206,14 +206,23 @@ done
 
 # --- publish the GitHub Release (same-repo: GITHUB_TOKEN is sufficient,
 #     no cross-repo credential / App token needed -- see DISTRIBUTION.md). ---
-notes_args=()
+# The GPL corresponding-source written offer (GPLv2 s.3(b): valid >= 3
+# years) is ALWAYS appended: the source-provision obligation for every
+# GPL/LGPL binary in the published images sits with the distributor, and
+# DozenOS-built packages alone do not cover the Debian-origin ones.
+source_offer='---
+
+**Source code.** DozenOS-built packages correspond to the public repositories at https://github.com/dozenos (the exact mirror commits for this build are recorded in version.json / the build manifest). For any other GPL- or LGPL-covered binary included in these images (Debian-derived packages), we will provide the complete corresponding source upon request: open an issue at https://github.com/dozenos/dozenos-nightly-build/issues naming the release tag. Exact package versions are recorded per release and their sources are retrievable via https://snapshot.debian.org. This offer is valid for three years from the publication date of this release.'
+final_notes=$(mktemp)
 if [ -n "$notes_file" ]; then
-  notes_args=(--notes-file "$notes_file")
+  cat "$notes_file" > "$final_notes"
 elif [ -n "$notes" ]; then
-  notes_args=(--notes "$notes")
+  printf '%s\n' "$notes" > "$final_notes"
 else
-  notes_args=(--notes "Automated DozenOS nightly build. See version.json for asset checksums.")
+  printf '%s\n' "Automated DozenOS nightly build. See version.json for asset checksums." > "$final_notes"
 fi
+printf '\n%s\n' "$source_offer" >> "$final_notes"
+notes_args=(--notes-file "$final_notes")
 
 echo "I: creating GitHub Release ${tag} in ${repo} (${#assets[@]} asset(s) + signatures + version.json)" >&2
 GH_TOKEN="$GITHUB_TOKEN" gh release create "$tag" \

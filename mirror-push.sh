@@ -363,6 +363,31 @@ fi
 log "5/7 generating .github/workflows/sync.yml ..."
 generate_sync_workflow "$CLONE_DIR"
 
+# NOTICE: repo-level provenance/attribution statement (LEGAL, 2026-07-11).
+# Byte-stable and zero-vyos (upstream is identified by the per-file
+# notices and debian/copyright the transform preserves, plus the sync
+# workflow's UPSTREAM_URL variable). Written on every push, same slot as
+# sync.yml, before verify so the residual check covers it.
+write_notice() {
+  cat > "$1/NOTICE" <<'EOF'
+This repository is a mechanically rebranded mirror of an upstream open
+source project, produced by the DozenOS rename-transform toolkit
+(https://github.com/dozenos/dozenos-rebrand). Each snapshot commit is
+generated from a fresh clone of the upstream source.
+
+Original copyright remains with the upstream authors; their notices are
+preserved verbatim in the source files and in debian/copyright where
+present. Modifications are Copyright DozenOS Contributors and consist of
+the mechanical rebrand plus any codified overlay changes recorded in the
+toolkit repository.
+
+DozenOS is an independent community project. It is not affiliated with,
+endorsed by, or supported by the upstream project's vendor or any other
+commercial entity.
+EOF
+}
+write_notice "$CLONE_DIR"
+
 # ------------------------------------------------------------------------- #
 # 6) Verify -- must be 0 residual vyos, unless --allow-residuals AND every
 #    residual matches the checked-in allowlist (EXPECTED_RESIDUALS /

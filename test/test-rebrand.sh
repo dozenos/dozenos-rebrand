@@ -183,13 +183,22 @@ run_asserts() {
     bad "expected renamed paths missing (libdozenosconfig0.install / usr/share/dozenos / dozenos-router.service)"
   fi
 
-  # (3b) copyright notice preserved verbatim; non-copyright lines transformed
+  # (3b) copyright notice preserved verbatim; non-copyright lines transformed;
+  # modification marker inserted exactly once after the notice
   if [ -f "$tree/src/legal-header.py" ]; then
     if grep -qF 'Copyright (C) VyOS Inc. <maintainers@vyos.io>' "$tree/src/legal-header.py" \
        && grep -q 'maintained by the DozenOS team' "$tree/src/legal-header.py"; then
       ok "copyright line preserved verbatim; non-copyright line transformed"
     else
       bad "copyright preservation mismatch"
+      cat "$tree/src/legal-header.py"
+    fi
+    n_marker=$(grep -cF 'Modifications Copyright DozenOS Contributors. See git history for details.' "$tree/src/legal-header.py")
+    if [ "$n_marker" -eq 1 ] \
+       && sed -n 2p "$tree/src/legal-header.py" | grep -qF '# Modifications Copyright DozenOS Contributors.'; then
+      ok "modification marker inserted once, directly after the notice"
+    else
+      bad "modification marker count/position wrong (count=$n_marker)"
       cat "$tree/src/legal-header.py"
     fi
   fi

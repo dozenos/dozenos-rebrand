@@ -150,16 +150,75 @@ preserved_file() {
 # legitimately carrying `vyos`, a second pass would stat-dirty every such
 # file -- cloud-init's make-tarball checks `git diff-index HEAD` (stat
 # cache, not content) and hard-fails on that. `cat >` keeps the inode and
-# permissions.
+# permissions. Files the pass DID change are collected for the
+# modification-notice step below.
+CHANGED_LIST=$(mktemp)
 while IFS= read -r -d '' f; do
   grep -Iq . "$f"      || continue   # skip binary
   grep -qi 'vyos' "$f" || continue   # skip files with no vyos form
   preserved_file "$f"  && continue   # legal files kept byte-identical
   tmp=$(mktemp)
   sed "${SED_ARGS[@]}" "$f" > "$tmp"
-  cmp -s "$tmp" "$f" || cat "$tmp" > "$f"
+  if ! cmp -s "$tmp" "$f"; then
+    cat "$tmp" > "$f"
+    printf '%s\0' "$f" >> "$CHANGED_LIST"
+  fi
   rm -f "$tmp"
 done < <(find "$TARGET" -type f -not -path '*/.git/*' -print0)
+
+# ---------------------------------------------------------------------------
+# 1b) MODIFICATION NOTICE -- OpenSearch-style "Modifications Copyright"
+#     marker (user decision 2026-07-11; GPLv2 s.2(a) modified-files notice,
+#     made explicit in-file instead of implied by git history alone).
+#     Applied ONLY to files the content pass just changed AND whose header
+#     already carries a preserved copyright notice; inserted after the last
+#     consecutive notice line, reusing that line's comment leader. Skipped
+#     when the notice line closes its own comment (\"*/\", \"-->\") or has
+#     no comment leader at all (plain-text license files) -- fail-open, a
+#     missing marker is legal, a syntax-broken file is not. Idempotent: the
+#     marker itself matches the copyright guard, so re-runs neither
+#     transform nor duplicate it.
+MOD_MARKER='Modifications Copyright DozenOS Contributors. See git history for details.'
+if [ -s "$CHANGED_LIST" ]; then
+  MARKER="$MOD_MARKER" GUARD_ERE="${COPYRIGHT_LINE_GUARD:-}" \
+  python3 - < /dev/null 3< "$CHANGED_LIST" <<'PYEOF'
+import os, re, sys
+
+marker = os.environ['MARKER']
+guard = os.environ.get('GUARD_ERE') or None
+files = [p for p in open(3, 'rb').read().split(b'\0') if p]
+g = re.compile(guard) if guard else None
+
+for raw in files:
+    path = raw.decode('utf-8', 'surrogateescape')
+    try:
+        text = open(path, encoding='utf-8', errors='surrogateescape').read()
+    except OSError:
+        continue
+    if marker in text or g is None:
+        continue
+    lines = text.splitlines(keepends=True)
+    first = next((i for i, l in enumerate(lines[:80]) if g.search(l)), None)
+    if first is None:
+        continue
+    m = g.search(lines[first])
+    prefix = lines[first][:m.start()]
+    rest = lines[first][m.end():]
+    # comment leader must be non-empty and contain a comment character;
+    # a notice line that closes its own comment cannot host a sibling.
+    if not prefix.strip() or not re.fullmatch(r"""[\s#;*/!%"'.-]+""", prefix):
+        continue
+    if re.search(r'(\*/|-->|\?>)', rest):
+        continue
+    last = first
+    while last + 1 < len(lines) and g.search(lines[last + 1]):
+        last += 1
+    eol = '\r\n' if lines[last].endswith('\r\n') else '\n'
+    lines.insert(last + 1, f'{prefix}{marker}{eol}')
+    open(path, 'w', encoding='utf-8', errors='surrogateescape').write(''.join(lines))
+PYEOF
+fi
+rm -f "$CHANGED_LIST"
 
 # ---------------------------------------------------------------------------
 # 2) SYMLINK TARGET PASS -- rewrite link targets without dereferencing.
@@ -200,6 +259,25 @@ done < <(find "$TARGET" -mindepth 1 -depth -iname '*vyos*' -not -path '*/.git/*'
 #    same file/field the auto-stamp itself edits), not from the target
 #    directory's basename, since the two are not guaranteed to match.
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# GUARD OBSERVABILITY -- one summary line per run so sync logs show how much
+# content the legal guards kept. A sudden jump means upstream introduced new
+# vyos-bearing notice-like lines worth a human look (the 2026-07-11 Makefile
+# lint-target regression was only caught when builds broke).
+# ---------------------------------------------------------------------------
+guard_kept=$( { grep -rIni vyos "$TARGET" --exclude-dir=.git 2>/dev/null || true; } \
+  | awk -F: -v g="${COPYRIGHT_LINE_GUARD:-}" '{
+      s = ""; for (i = 3; i <= NF; i++) s = s (i > 3 ? ":" : "") $i
+      if (g != "" && s ~ g) n++
+    } END { print n + 0 }')
+pf_kept=0
+for p in "${PRESERVE_FILES[@]:-}"; do
+  [ -n "$p" ] || continue
+  n=$(find "$TARGET" \( -path "$TARGET/$p" -o -path "*/$p" \) -not -path '*/.git/*' -type f 2>/dev/null | wc -l)
+  pf_kept=$((pf_kept + n))
+done
+echo "rename-transform: copyright guard kept $guard_kept vyos-bearing notice line(s); $pf_kept whole file(s) preserved (PRESERVE_FILES)" >&2
+
 if [ -n "$STAMP" ] && [ -f "$TARGET/debian/changelog" ]; then
   changelog_source=$(head -1 "$TARGET/debian/changelog" | sed -n 's/^\([^ ]*\) .*/\1/p')
   excluded=0
