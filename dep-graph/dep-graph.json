@@ -247,7 +247,7 @@
       "(see ISO-BUILD.md item #13); for a stock Debian package, the image's",
       "normal Debian apt sources. Each entry below documents which side of",
       "that boundary it falls on and the exact evidence for the pin/Depends.",
-      "package-smoketest.yml / any future ISO-build gate SHOULD assert these",
+      "nightly.yml / any future ISO-build gate SHOULD assert these",
       "three resolve (e.g. `apt-get install --dry-run` or an equivalent",
       "resolvability check against the assembled apt sources) before",
       "declaring an ISO build green -- not yet wired in as an automated gate",

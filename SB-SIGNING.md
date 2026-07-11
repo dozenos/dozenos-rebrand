@@ -197,10 +197,10 @@ section is updated to point here.
 
 ## 6. Where the CI injection step is wired
 
-`overlay-dozenos-build/new-files/.github/workflows/package-smoketest.yml`'s `build_iso`
-job (item #8) already runs a full `build-dozenos-image` inside Docker. A
-step calling `release/inject-mok-cert.sh` is added **immediately before**
-the "Build custom ISO image" step, guarded so it is a no-op when the
+`dozenos-nightly-build`'s `nightly.yml` `build-image` job (item #17) runs a
+full `build-dozenos-image` inside Docker. A
+step calling `release/inject-mok-cert.sh` runs **immediately before**
+the image-build step, guarded so it is a no-op when the
 secrets are not configured (e.g. a fork, or before the org secrets existed):
 
 The two MOK secrets are mirrored into the **job-level** `env:` (the `secrets`
@@ -233,17 +233,13 @@ itself already removes its own in-chroot copy, see §3):
   run: dozenos-rebrand/release/inject-mok-cert.sh dozenos-build --cleanup
 ```
 
-**Why here and not only item #13:** `package-smoketest.yml` is the only
-workflow that currently runs a real `build-dozenos-image` end-to-end
-(item #17's nightly-build workflow, item #13's actual deliverable, is not
-authored yet — see `.powerloop/2026-07-07-cicd.note.md` item #13: "pending").
-Wiring the guarded step here means SB signing is exercised (when secrets are
-present) on every push to `rolling`, not just once nightly builds exist —
-and the guard means nothing changes for this workflow when the secrets are
-absent (identical to today's unsigned behavior, §3 "Local vs CI"). Item #13's
-nightly workflow, once authored, should use the **same two steps** verbatim
-(same script, same guard) — this document is the reference for that
-wiring, so item #13 does not have to re-derive it.
+**History:** these two steps were originally authored in
+`package-smoketest.yml`'s `build_iso` job (the only end-to-end
+`build-dozenos-image` workflow before item #17 existed); `nightly.yml`
+adopted them verbatim (same script, same guard), and `package-smoketest.yml`
+was retired 2026-07-11 (`ISO-BUILD.md` §5). This document remains the
+reference for the wiring — any future image-building workflow should reuse
+the same two steps verbatim.
 
 ## 7. Post-build verification (maintainer checklist)
 
@@ -450,14 +446,12 @@ with Secure Boot hardware — nothing in the build or test pipeline runs
 `mokutil --import` itself), so it only needs to exist wherever
 `data/certificates/` is populated before `build-dozenos-image`'s copytree
 runs — which is exactly where item #10 already calls
-`release/inject-mok-cert.sh`, in `package-smoketest.yml`'s `build_iso` job
+`release/inject-mok-cert.sh`, in `nightly.yml`'s `build-image` job
 (§6). Since the `.der` derivation was added **inside** `inject-mok-cert.sh`
 itself (not a sibling script), the existing guarded
 `if: env.MOK_SIGNING_KEY != '' && env.MOK_SIGNING_CERT != ''` step
 and its matching `--cleanup` step now produce/remove all three files with
-no workflow YAML change required. Item #13's nightly workflow, once
-authored, inherits this for free by following §6's guidance to reuse the
-same two steps verbatim.
+no workflow YAML change required.
 
 ### 9.6 What is statically verified vs. CI-only
 

@@ -475,9 +475,9 @@ if [ -d "$VYOS_BUILD_LOCAL/.git" ]; then
   # ---------------------------------------------------------------------- #
   # Item #14: --build-repo must still get its own generated sync.yml,
   # COEXISTING with the item #8 build workflows (build-docker-image.yml,
-  # rebuild-packages.yml, package-smoketest.yml) under the same
-  # .github/workflows/ directory, with "--build-repo" (and nothing else --
-  # --allow-residuals is implied, not also baked) on its flags line.
+  # rebuild-packages.yml) under the same .github/workflows/ directory,
+  # with "--build-repo" (and nothing else -- --allow-residuals is implied,
+  # not also baked) on its flags line.
   # ---------------------------------------------------------------------- #
   SYNC5="$WORK_DIR5/clone/.github/workflows/sync.yml"
   if [ -f "$SYNC5" ]; then
@@ -486,7 +486,7 @@ if [ -d "$VYOS_BUILD_LOCAL/.git" ]; then
     bad "--build-repo: sync.yml was not generated"
   fi
 
-  for wf in build-docker-image.yml rebuild-packages.yml package-smoketest.yml; do
+  for wf in build-docker-image.yml rebuild-packages.yml; do
     if [ -f "$WORK_DIR5/clone/.github/workflows/$wf" ]; then
       ok "--build-repo: $wf coexists alongside sync.yml"
     else

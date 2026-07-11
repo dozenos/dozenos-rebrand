@@ -105,6 +105,14 @@ jobs:
           # documented build_units.unmappable "squid" case) is dropped with
           # a warning on stderr, never silently invented.
           MATRIX=$(dozenos-rebrand/dep-graph/nodes-to-build-units.sh "$PACKAGE" --graph dozenos-rebrand/dep-graph/dep-graph.json --json)
+
+          # shim-signed can never build here: its Build-Depends pins
+          # `shim-unsigned (= <ver>+dozenos1)`, a Secure Boot shim DozenOS
+          # deliberately does not rebuild (the ISO uses Debian's stock
+          # shim-signed -- dozenos-rebrand/SB-SIGNING.md). Same exclusion as
+          # ../rebuild-packages.yml's discover and nightly.yml's package
+          # matrix; without it every shim-signed mirror sync fails this run.
+          MATRIX=$(jq -c '[.[] | select(.recipe != "shim-signed")]' <<<"$MATRIX")
           echo "I: deduped build-unit matrix for '$PACKAGE': $MATRIX"
           echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
 
@@ -258,25 +266,16 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
-  # trigger-iso: fire ISO rebuilds off the just-updated debs. The in-repo
-  # package-smoketest.yml dispatch needs only GITHUB_TOKEN (same-repo, with
-  # `actions: write`); the dozenos-nightly-build notify is cross-repo and
-  # uses an App token.
-  trigger-iso:
+  # notify-nightly: signal dozenos-nightly-build that the mirror set moved.
+  # Image building and the config-load gate both live there (full in-run
+  # rebuild + its own change-gate dedup); this repo builds no ISO of its
+  # own. Cross-repo dispatch needs an App token, not GITHUB_TOKEN.
+  notify-nightly:
     needs: [resolve, build]
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      actions: write
     steps:
-      - name: Trigger in-repo ISO integration build (package-smoketest.yml)
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          gh workflow run package-smoketest.yml --repo "${{ github.repository }}"
-          echo "I: dispatched package-smoketest.yml on ${{ github.repository }} (in-repo ISO integration build)"
-
       - name: Mint GitHub App token (dozenos-nightly-build notify)
         id: app_token
         continue-on-error: true

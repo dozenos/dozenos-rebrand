@@ -172,8 +172,8 @@ mint time). What was done:
    check-changes mints org-wide, since its whole job is enumerating the
    mirror set). Touched: `sync.yml.template` (dispatch step),
    `overlay-dozenos-build/new-files/.github/workflows/{rebuild-dispatch,
-   rebuild-packages,package-smoketest}.yml`, and
-   `dozenos-nightly-build`'s `nightly.yml` (6 jobs). Token lifetime (~1h)
+   rebuild-packages}.yml`, and
+   `dozenos-nightly-build`'s `nightly.yml`. Token lifetime (~1h)
    vs. multi-hour builds is a non-issue by construction: every job uses
    its token only in its opening minutes (checkouts / API reads), never
    after the long build steps — `nightly.yml`'s build-image job carries a

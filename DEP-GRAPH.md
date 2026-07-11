@@ -182,7 +182,7 @@ dependencies — conflating them with `reverse_dependencies` would make
 package-list entry against whatever apt source(s) it is given — the
 ephemeral, `file://`-only repo `make-ephemeral-apt-repo.sh` assembles from
 freshly built `.deb`s for DozenOS-built packages, or the image's normal
-Debian apt sources for stock Debian packages. `package-smoketest.yml` /
+Debian apt sources for stock Debian packages. `nightly.yml` /
 any future ISO-build gate **should** assert all three resolve before
 declaring a build green; wiring that gate is not part of this item (this
 item ships the data the gate would consume).

@@ -64,7 +64,7 @@ accurate, no drift:
 | `pr-mirror-repo-sync.yml` | VyOS-org infra (`uses: vyos/.github/...@production`) | stripped |
 | `trigger-docker-image-build.yml` | build CI (self-contained; only 3rd-party marketplace `uses:`) | stripped, **replaced by #8 (authored)** |
 | `trigger_rebuild_packages.yml` | build CI (self-contained; only 3rd-party marketplace `uses:`) | stripped, **replaced by #8 (authored)** |
-| `package-smoketest.yml` | build CI (self-contained; only 3rd-party marketplace `uses:`) | stripped, **replaced by #8 (authored)** |
+| `package-smoketest.yml` | build CI (self-contained; only 3rd-party marketplace `uses:`) | stripped (an authored replacement existed 2026-07-08..2026-07-11, then retired — the config-load gate lives in `dozenos-nightly-build`'s `nightly.yml`, see `REBUILD-DISPATCH.md` §6) |
 
 `.github/` also carries non-workflow VyOS-org config
 (`config/smoketest-branches.json`, `mergify.yml`, `PULL_REQUEST_TEMPLATE.md`)
@@ -89,15 +89,17 @@ excluded from workflows" below for how the engine enforces that.)
 
 - **`dozenos-build`'s own build/rebuild CI (items #8 and #15, AUTHORED
   2026-07-08):** lives under `dozenos-rebrand/overlay-dozenos-build/new-files/.github/workflows/`
-  as `build-docker-image.yml`, `rebuild-packages.yml`, `package-smoketest.yml`
-  (item #8) plus `rebuild-dispatch.yml` (item #15, the incremental
+  as `build-docker-image.yml`, `rebuild-packages.yml` (item #8) plus
+  `rebuild-dispatch.yml` (item #15, the incremental
   rebuild-fan-out receiver for item #14's `repository_dispatch` — see
   `REBUILD-DISPATCH.md`), all copied in by `overlay-dozenos-build/apply-overlay.sh` (the
   same `new-files/` bucket already used for new build recipes — see
-  `overlay-dozenos-build/README.md`). Replaces the 3 build workflows above and adds one new
-  one with no upstream counterpart; verified to not reintroduce any of the 8
-  infra ones (zero `vyos`, zero `uses: vyos/*`, all secrets/vars used are
-  defined in `CI-SECRETS.md`). Full write-up, per-file description, and
+  `overlay-dozenos-build/README.md`). Replaces 2 of the build workflows above and adds one
+  new one with no upstream counterpart (upstream's `package-smoketest.yml`
+  gets no replacement here — ISO build + config-load gate live in
+  `dozenos-nightly-build`'s `nightly.yml`); verified to not reintroduce any
+  of the 8 infra ones (zero `vyos`, zero `uses: vyos/*`, all secrets/vars
+  used are defined in `CI-SECRETS.md`). Full write-up, per-file description, and
   end-to-end repro proof: `overlay-dozenos-build/MANIFEST.md`'s "new-files/ —
   `.github/workflows/` (item #8, LANDED)" and "... `rebuild-dispatch.yml`
   (item #15, LANDED)" sections.
@@ -249,23 +251,22 @@ policy file stays the single index of "where does X come from":
 
 ## Ephemeral in-job apt repo / signed ISO (#13)
 
-Item #13 is now authored — full spec, the verified `build-dozenos-image
---dozenos-mirror` flag, and the `package-smoketest.yml` wiring live in
+Item #13 is now authored — full spec and the verified `build-dozenos-image
+--dozenos-mirror` flag live in
 `ISO-BUILD.md`; the reusable helper is `release/make-ephemeral-apt-repo.sh`
 (a toolkit file, same placement class as `release/gen-version-json.sh`/
 `release/sign-and-publish.sh` — see `overlay-dozenos-build/MANIFEST.md`'s note on
-`release/`). Summary: `package-smoketest.yml`'s `build_iso` job now merges
-recently-built `deb-*` artifacts (best effort, `gh run list`/`gh run
-download` against this repo's own `rebuild-packages.yml` history) into an
-ephemeral, unsigned, `[trusted=yes]` apt repo built inside the same
-container invocation that runs `build-dozenos-image`, so the ISO's mandatory
-`dozenos-1x` package (and anything else DozenOS-built) can actually be
-apt-installed during live-build chroot assembly — closing a real
-pre-existing gap (`--dozenos-mirror ""` alone cannot satisfy that
-dependency). Item #17's nightly workflow should do a full, guaranteed-fresh
-rebuild-then-consume in one run instead of this best-effort history scan —
-see `ISO-BUILD.md` §5's "Why this is 'best effort' here" for the full
-rationale.
+`release/`). Summary: an ephemeral, unsigned, `[trusted=yes]` apt repo is
+built inside the same container invocation that runs `build-dozenos-image`,
+so the ISO's mandatory `dozenos-1x` package (and anything else
+DozenOS-built) can actually be apt-installed during live-build chroot
+assembly — `--dozenos-mirror ""` alone cannot satisfy that dependency. Its
+sole consumer is `dozenos-nightly-build`'s `nightly.yml` (item #17), which
+does a full, guaranteed-fresh rebuild-then-consume in one run. The original
+consumer, a `package-smoketest.yml` `build_iso` job that best-effort-scanned
+this repo's `rebuild-packages.yml` artifact history, was retired 2026-07-11:
+the history scan structurally never contained the linux-kernel family, so
+that job failed every run — see `REBUILD-DISPATCH.md` §6.
 
 ## Status
 

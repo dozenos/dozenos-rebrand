@@ -32,6 +32,9 @@ dozenos-build: overlay-dozenos-build/new-files/.github/workflows/rebuild-dispatc
     -> dep-graph/resolve-rebuild-set.sh <package> --json
        (transitive closure over dep-graph/dep-graph.json's reverse map)
     -> collapse the linux-kernel family (if present) into ONE matrix entry
+    -> drop shim-signed (never buildable here: its Build-Depends pins a
+       shim-unsigned DozenOS deliberately does not rebuild -- SB-SIGNING.md;
+       same exclusion as rebuild-packages.yml's discover and nightly.yml)
     -> outputs.matrix = the resolved, incremental build set
   job B "build"  (needs: resolve, strategy.matrix over outputs.matrix)
     -> same shape as overlay-dozenos-build/new-files/.github/workflows/rebuild-packages.yml
@@ -41,9 +44,7 @@ dozenos-build: overlay-dozenos-build/new-files/.github/workflows/rebuild-dispatc
        scripts/package-build/linux-kernel/build.py with NO --packages
        filter (builds kernel + every OOT module together, in package.toml
        order); every other entry uses the generic per-directory build path
-  job C "trigger-iso"  (needs: [resolve, build])
-    -> gh workflow run package-smoketest.yml --repo <this repo>
-       (in-repo ISO integration build, item #13, GITHUB_TOKEN suffices)
+  job C "notify-nightly"  (needs: [resolve, build])
     -> gh api .../dozenos-nightly-build/dispatches
        (event_type dozenos-image-build-requested -- since 2026-07-09
         this is the PRIMARY image-build trigger: dozenos-nightly-build's
@@ -87,7 +88,7 @@ naming wrinkle, the `linux-kernel` family's package.toml block names).
 ## 3. `workflow_dispatch` manual test input
 
 `rebuild-dispatch.yml` also accepts `workflow_dispatch` with a required
-`package` string input, for manually testing the resolve→build→trigger-iso
+`package` string input, for manually testing the resolve→build→notify-nightly
 path without waiting for a real mirror sync to fire the event. Distinct from
 `rebuild-packages.yml`'s own `package_name` input (that workflow's input
 selects a `scripts/package-build/*` directory to build directly; this one
@@ -217,50 +218,36 @@ neutral `/dozenos` mount and `/dozenos-rebrand` checkout — see
 `MLNX-AND-DWARF.md` #25 for why the neutral mount matters for kernel/OOT
 builds specifically (DWARF `comp_dir` debranding).
 
-## 6. Job C — which ISO-trigger mechanism, and why
+## 6. Job C — the image-build trigger
 
-**Primary: in-repo `workflow_dispatch` of `package-smoketest.yml`.** That
-workflow (item #13, already landed — see `ISO-BUILD.md`) already builds a
-real ISO via `build-dozenos-image` and already best-effort-merges recently
-built `deb-*` artifacts into an ephemeral apt repo. Dispatching it is a
-same-repo operation, so the job's own `GITHUB_TOKEN` (with `actions: write`
-granted at job level) is sufficient — no cross-repo credential needed for
-this half.
+**Cross-repo notify `dozenos/dozenos-nightly-build` (item #17), best-effort.**
+`nightly.yml` there does the full, guaranteed-fresh in-run rebuild, builds
+every flavor, runs the config-load gate (`make testc` against the generic
+ISO), and publishes; its own change-gate dedups duplicate notifies. The
+dispatch uses a runtime-minted org GitHub App token (cross-repo dispatch
+needs a cross-repo credential, not `GITHUB_TOKEN` — `CI-SECRETS.md` §4),
+wrapped so the step never fails the job (`continue-on-error: true` at the
+step level, plus an in-script `if gh api ...; then ... else ...; fi` so the
+failure path is logged, not silent).
 
-**Secondary, best-effort: cross-repo notify `dozenos/dozenos-nightly-build`
-(item #17).** That repo does not exist yet (`DISTRIBUTION.md`/`WORKFLOW-POLICY.md`
-both record item #17 as not-yet-authored) — it is the eventual "full,
-guaranteed-fresh nightly rebuild" counterpart (`ISO-BUILD.md` §5's own "what
-item #17 should do instead" note). This job still references it **by name**,
-using a runtime-minted org GitHub App token (cross-repo dispatch needs a
-cross-repo credential, not `GITHUB_TOKEN` — `CI-SECRETS.md` §4), wrapped so
-the step never fails the job
-even when the target repo 404s (`continue-on-error: true` at the step level,
-plus an in-script `if gh api ...; then ... else ...; fi` so the failure path
-is logged, not silent). Once item #17 creates that repo, this step starts
-succeeding with **zero changes needed here**.
-
-Doing both (rather than picking only one, as the task framing offered as an
-either/or) maximizes value at both time horizons: today, before item #17
-exists, the in-repo integration build is the only real ISO-build path
-available, so it must not be skipped; once item #17 lands, the best-effort
-notify already in place needs no follow-up edit to `rebuild-dispatch.yml`
-itself.
+Until 2026-07-11 job C also dispatched an in-repo `package-smoketest.yml`
+ISO integration build. That workflow was retired: it sourced its `.deb`s
+from a best-effort scan of recent `rebuild-packages.yml` artifacts, which
+structurally never contained the linux-kernel family (kernel debs are built
+only in the nightly), so its `lb build` failed on every run since landing.
+The config-load gate it carried now runs inside `nightly.yml`, against an
+ISO built from a complete package set, where it gates the Release publish.
 
 ## 7. Permissions / secrets
 
 - Workflow-level `permissions: contents: read` (minimal default).
-- Job C adds `actions: write` (job-level only) — required for
-  `gh workflow run` against this same repo.
 - Runtime-minted org GitHub App tokens (`vars.BUILD_APP_ID` +
   `secrets.BUILD_APP_PRIVATE_KEY` via `actions/create-github-app-token@v3`,
   one mint step at the start of each consuming job, `repositories:` narrowed
   to that job's targets — see `CI-SECRETS.md` §4) used for: checking out
   `dozenos/dozenos-rebrand` (jobs A and B, same reason every other item #8
   workflow needs it — see `rebuild-packages.yml`'s own comment on
-  `pre_build_hook`), and the best-effort cross-repo notify in job C. Never
-  used for the same-repo `package-smoketest.yml` dispatch (that uses the
-  ambient `GITHUB_TOKEN`).
+  `pre_build_hook`), and the best-effort cross-repo notify in job C.
 - Zero literal `vyos` anywhere in `rebuild-dispatch.yml`; zero `uses: vyos/*`
   (verified, see §8).
 
@@ -320,8 +307,9 @@ dozenos-rebrand/mirror-push.sh https://github.com/vyos/vyos-build.git \
   --target dozenos-build --build-repo --dry-run --work <scratch>
 ```
 
-`.github/workflows/` in the reproduced clone contains exactly 5 files:
-`build-docker-image.yml`, `package-smoketest.yml`, `rebuild-dispatch.yml`,
+`.github/workflows/` in the reproduced clone contains exactly 4 files
+(5 until `package-smoketest.yml` was retired 2026-07-11, see §6):
+`build-docker-image.yml`, `rebuild-dispatch.yml`,
 `rebuild-packages.yml`, `sync.yml` — `rebuild-dispatch.yml` is
 byte-identical to the overlay source (`diff -q`, no differences). `--verify`
 still reports the same 9 pre-existing residual `vyos` hits documented in

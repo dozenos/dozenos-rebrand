@@ -191,8 +191,8 @@ mode-B tree (not just claimed):**
   work at the neutral path, not `/vyos`:
   - `overlay-dozenos-build/new-files/.github/workflows/rebuild-packages.yml:135-136`:
     `-v "${{ github.workspace }}/dozenos-build:/dozenos" ... -w /dozenos`.
-  - `overlay-dozenos-build/new-files/.github/workflows/package-smoketest.yml:96-97,153`:
-    same `.../dozenos-build:/dozenos` pattern.
+  - the same `.../dozenos-build:/dozenos` pattern in every other
+    container-build job (`rebuild-dispatch.yml`, `nightly.yml`).
 - The self-built local image `dozenos/dozenos-build:rolling`
   (`docker/Dockerfile`, tagged locally per `.powerloop/2026-07-07-rebrand.note.md`
   item #14) plus the **canonical launch**
@@ -332,7 +332,7 @@ dozenos-rebrand/mirror-push.sh https://github.com/vyos/vyos-build.git \
   all `github.com/vyos/*` git URLs — a different, already-tracked residual
   class — not filesystem paths).
 - Confirmed `docker/entrypoint.sh`'s `USER_NAME="dozenos_bld"` and
-  `rebuild-packages.yml`/`package-smoketest.yml`'s `-v .../dozenos-build:/dozenos
+  `rebuild-packages.yml`'s `-v .../dozenos-build:/dozenos
   -w /dozenos` are present in the **reproduced clone itself**, not only in
   hand-maintained overlay source — i.e. a fresh mirror push today would
   already carry the #25 fix for every C2/CI-driven build.

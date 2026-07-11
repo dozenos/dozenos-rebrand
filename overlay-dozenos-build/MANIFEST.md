@@ -59,9 +59,8 @@ copied-in path).
 for discoverability — full spec is `../DISTRIBUTION.md`. `../release/make-ephemeral-apt-repo.sh`
 (item #13, the ephemeral in-job apt repo consumed by `build-dozenos-image
 --dozenos-mirror`) is the same placement class — a script CI *invokes*, not
-shipped-into-the-tree content — see `../ISO-BUILD.md` for its spec and
-`overlay-dozenos-build/new-files/.github/workflows/package-smoketest.yml`'s "adaptation
-#5" for where it is called from.
+shipped-into-the-tree content — see `../ISO-BUILD.md` for its spec;
+`dozenos-nightly-build`'s `nightly.yml` (item #17) is its consumer.
 
 ## Related, NOT part of this overlay: item #14 self-sync `sync.yml` generation
 
@@ -71,8 +70,8 @@ mirror's `.github/workflows/sync.yml` — full design in `../SYNC.md`. Listed
 here only for discoverability and to head off a natural confusion: this
 content DOES land under `.github/workflows/` on every mirror, same directory
 as this overlay's own `new-files/.github/workflows/` build CI (item #8,
-above), and for `dozenos-build` specifically the two coexist side by side (4
-files: `sync.yml` + the 3 build workflows). But `sync.yml` is **not** part of
+above), and for `dozenos-build` specifically the two coexist side by side
+(`sync.yml` + the build workflows). But `sync.yml` is **not** part of
 this `overlay-dozenos-build/` bucket and is **not** copied in by `apply-overlay.sh` — it is
 generated directly by `mirror-push.sh` itself, unconditionally, for every
 target (plain, `--build-repo`, and `--overlay` alike), as its own pipeline
@@ -92,7 +91,7 @@ already zero-`vyos` (third-party Mellanox naming, verified against the
 reproduced clone), and the neutral `/dozenos` build mount + `dozenos_bld`
 user this item required are already produced by the existing generic
 four-form transform (`docker/entrypoint.sh`'s `USER_NAME`) and the existing
-item #8 workflows (`rebuild-packages.yml`/`package-smoketest.yml`'s
+item #8 workflows (`rebuild-packages.yml`'s
 `-v .../dozenos-build:/dozenos -w /dozenos`) — confirmed present in a fresh
 mode-B reproduction, not just asserted. Listed here only for
 discoverability, same pattern as the `release/` entry above.
@@ -155,14 +154,15 @@ else in this manifest.
 Per `WORKFLOW-POLICY.md`: the wholesale `.github/` strip (mirror-push.sh step
 3/6) removes ALL upstream workflows, including the 3 self-contained build-CI
 ones (the other 8 are VyOS-org infra, correctly gone for good). This bucket
-re-adds DozenOS-authored replacements for those 3, landed under
-`new-files/.github/workflows/`:
+re-adds DozenOS-authored replacements for 2 of those 3, landed under
+`new-files/.github/workflows/` (the third, `package-smoketest.yml`, had an
+authored replacement 2026-07-08..2026-07-11 — see the retirement note
+below):
 
 | File | Ported from (upstream, now-stripped) | Trigger | What it does |
 |---|---|---|---|
 | `build-docker-image.yml` | `trigger-docker-image-build.yml` | `push` to `rolling` on `docker/**`, + `workflow_dispatch` | Builds `docker/Dockerfile` and pushes `ghcr.io/dozenos/dozenos-build:rolling` using the job's own `GITHUB_TOKEN` (no external registry secret). Upstream only *dispatched* to a private org "reuse" repo that did this; DozenOS has no such repo, so the build+push is inlined here instead. |
 | `rebuild-packages.yml` | `trigger_rebuild_packages.yml` | `push` to `rolling` on `scripts/package-build/**` (excl. `linux-kernel`), + `workflow_dispatch` (single-package input) | A `discover` job computes a dynamic JSON matrix of changed package dirs (replacing upstream's ~40-entry hand-maintained filter/if list, per `REBRAND-PLAN.md` §3b), then a `build` job runs each package's `python3 ../build.py` inside `ghcr.io/dozenos/dozenos-build:rolling`, mounted at `/dozenos`, with `dozenos/dozenos-rebrand` checked out to `/dozenos-rebrand` (required for every C2 recipe's `pre_build_hook = "/dozenos-rebrand/rename-transform.sh ."`). Uploads built `.deb`s as workflow artifacts; no publish/apt-hosting step (no R2/Cloudflare secrets exist per `CI-SECRETS.md`). No GPG signing (C2 `build_cmd` is `-us -uc`, matching upstream). |
-| `package-smoketest.yml` | `package-smoketest.yml` | `push` to `rolling` (broad path filter, excl. docs/CI/package-build/docker), + `workflow_dispatch` | Builds a real ISO via `build-dozenos-image` (same `/dozenos` + `/dozenos-rebrand` mount pattern as above), then runs `make testc` config-load smoketests against it inside `ghcr.io/dozenos/dozenos-build:rolling`. Collapses upstream's 3-branch `set_config`/JSON-config indirection to constants (DozenOS mirrors only `rolling`); drops the PR-comment `result` job (`dozenos-build` is machine-pushed by `mirror-push.sh`, never PR'd against). Also carries item #10/#11's guarded MOK inject/cleanup steps (see `../SB-SIGNING.md` §6/§9.5) and, as of item #13 (see `../ISO-BUILD.md`), a best-effort ephemeral-apt-repo step so the ISO's mandatory `dozenos-1x` package can actually be apt-installed. |
 
 **Registry decision: `ghcr.io/dozenos/dozenos-build`, not Docker Hub.** Matches
 `REBRAND-PLAN.md` §3h's own stated rationale (free, no CI pull-rate-limit,
@@ -175,20 +175,13 @@ rather than inventing.
 `vars.BUILD_APP_ID` + `secrets.BUILD_APP_PRIVATE_KEY` (runtime-minted org
 GitHub App token — replaced the retired `BUILD_PAT`, see `CI-SECRETS.md` §4 —
 for the cross-repo checkout of `dozenos/dozenos-rebrand` into `/dozenos-rebrand`),
-`secrets.GITHUB_TOKEN` (implicit — ghcr.io push in `build-docker-image.yml`;
-as of item #13, also used by `package-smoketest.yml`'s `gh run
-list`/`gh run download` calls against this same repo's own workflow-run
-history, see `../ISO-BUILD.md` §5 — same-repo only, no new secret), `vars.BUILD_BY`
-(ISO `--build-by` value). **Updated for items #10/#11**: `package-smoketest.yml`
-*does* now reference `secrets.MOK_SIGNING_KEY`/`secrets.MOK_SIGNING_CERT`
-(guarded, no-op when unset) for the Secure Boot signing steps — see
-`../SB-SIGNING.md` §6/§9.5; the note directly above this one, that "no
-GPG/minisign/MOK secret is referenced by any of the 3," predates that work
-and is corrected here rather than left contradicting `SB-SIGNING.md`.
-`build-docker-image.yml` and `rebuild-packages.yml` still reference none of
-those — that part of the original note stands. Signing the durable *Release*
-artifact itself remains scoped to the not-yet-authored item #17 workflow
-per `CI-SECRETS.md`'s GPG role reconciliation.
+`secrets.GITHUB_TOKEN` (implicit — ghcr.io push in `build-docker-image.yml`).
+Neither `build-docker-image.yml` nor `rebuild-packages.yml` references any
+GPG/minisign/MOK secret; the MOK Secure Boot steps
+(`secrets.MOK_SIGNING_KEY`/`secrets.MOK_SIGNING_CERT`, `../SB-SIGNING.md`
+§6/§9.5) and the Release-signing minisign secrets live in
+`dozenos-nightly-build`'s `nightly.yml` (item #17) per `CI-SECRETS.md`'s
+role reconciliation.
 
 **Verified end-to-end (2026-07-08)**: `mirror-push.sh <vyos-build-url>
 --target dozenos-build --build-repo --dry-run` reproduces all 3 files
@@ -201,6 +194,18 @@ comments were reworded to avoid the literal string, since overlay
 `new-files/` content is scanned by `--verify` like everything else in the
 shipped tree). Full `test/*.sh` suite still green (113/113 assertions)
 after landing these files.
+
+### Retired 2026-07-11: `package-smoketest.yml`
+
+Deleted from this bucket without replacement. Its `build_iso` job sourced
+`.deb`s from a best-effort scan of recent `rebuild-packages.yml` artifacts,
+which structurally never contained the linux-kernel family (kernel debs are
+built only in the nightly's full in-run rebuild), so `lb build` failed on
+every run since landing. The `make testc` config-load gate it carried now
+runs in `dozenos-nightly-build`'s `nightly.yml` (job `test-config-load`,
+generic-flavor ISO, gating the Release publish); the MOK inject/cleanup and
+ephemeral-apt-repo steps already existed there. The two subsections below
+are retained as the historical record of the retired file.
 
 ### Updated for item #13: `package-smoketest.yml` ephemeral apt repo (2026-07-08)
 
@@ -225,13 +230,13 @@ reproduced clone too — not introduced by this item), `grep -ni vyos` and
 
 ## new-files/ — `.github/workflows/rebuild-dispatch.yml` (item #15, LANDED)
 
-A 4th file added to the same `new-files/.github/workflows/` bucket as the 3
-item #8 files above (they coexist: 4 files + the generated `sync.yml` = 5
-total under `dozenos-build`'s `.github/workflows/`). Full spec:
+Added to the same `new-files/.github/workflows/` bucket as the
+item #8 files above (they coexist with the generated `sync.yml`
+under `dozenos-build`'s `.github/workflows/`). Full spec:
 `../REBUILD-DISPATCH.md`. Summary: this is the RECEIVING side of item #14's
 self-sync dispatch (`sync.yml.template`'s `Dispatch rebuild` step,
 `event_type: dozenos-package-rebuild`, `client_payload.package`) — a
-3-job workflow (`resolve` → `build` → `trigger-iso`) that resolves the
+3-job workflow (`resolve` → `build` → `notify-nightly`) that resolves the
 changed package's transitive rebuild set via the new
 `../dep-graph/dep-graph.json` (BOOTSTRAP reverse-dependency graph, item #16
 completes coverage) + `../dep-graph/resolve-rebuild-set.sh`, rebuilds
@@ -239,9 +244,8 @@ completes coverage) + `../dep-graph/resolve-rebuild-set.sh`, rebuilds
 this is the incremental counterpart to `rebuild-packages.yml`'s
 push-triggered build), reusing the same `ghcr.io/dozenos/dozenos-build:rolling`
 + `/dozenos` + `/dozenos-rebrand`-mount build shape as `rebuild-packages.yml`,
-then triggers an ISO rebuild (`package-smoketest.yml`, in-repo
-`workflow_dispatch`, plus a best-effort cross-repo notify to the not-yet-existing
-`dozenos/dozenos-nightly-build`, item #17). `linux-kernel` + its OOT
+then best-effort-notifies `dozenos/dozenos-nightly-build` (item #17), which
+builds and gates the images. `linux-kernel` + its OOT
 dependents (which `rebuild-packages.yml` excludes from its generic path, for
 the same underlying reason) are collapsed into one matrix entry and built
 via the bespoke `scripts/package-build/linux-kernel/build.py` with no
@@ -250,10 +254,8 @@ via the bespoke `scripts/package-build/linux-kernel/build.py` with no
 **Secrets referenced**: `vars.BUILD_APP_ID` + `secrets.BUILD_APP_PRIVATE_KEY`
 (runtime-minted org GitHub App tokens — see `CI-SECRETS.md` §4 — for the
 `dozenos-rebrand` checkout in jobs `resolve`/`build` and the best-effort
-`dozenos-nightly-build` notify in job `trigger-iso`), the job's own
-`GITHUB_TOKEN` (same-repo `gh workflow run
-package-smoketest.yml` in job `trigger-iso`, `actions: write` granted at job
-level). No new secret introduced beyond what `CI-SECRETS.md` already lists.
+`dozenos-nightly-build` notify in job `notify-nightly`). No new secret
+introduced beyond what `CI-SECRETS.md` already lists.
 
 **Verified end-to-end (2026-07-08)**: mode-B reproduction lands
 `rebuild-dispatch.yml` byte-identical alongside the 3 item #8 files + the

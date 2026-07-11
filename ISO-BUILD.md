@@ -5,14 +5,13 @@ DozenOS-built `.deb` packages it needs, given the locked "no public apt
 mirror" decision (`DISTRIBUTION.md` §1), and how that combines with Secure
 Boot MOK signing (`SB-SIGNING.md`) to produce a signed, SB-capable ISO. This
 document is the toolkit-side record for `release/make-ephemeral-apt-repo.sh`
-and the CI wiring in `overlay-dozenos-build/new-files/.github/workflows/package-smoketest.yml`.
+and the CI wiring in `dozenos-nightly-build`'s `nightly.yml` (item #17, its
+sole consumer since `package-smoketest.yml`'s retirement — see §5).
 Cross-references: `DISTRIBUTION.md` (#9, artifact tiers this item consumes),
 `SB-SIGNING.md` (#10/#11, MOK signing this item's ISO build already carries),
 `MLNX-AND-DWARF.md` (#12/#25, the neutral `/dozenos` mount this item's builds
-already run under), `WORKFLOW-POLICY.md` (#7/#8, where the workflow files
-this document extends come from), and the not-yet-authored item #17
-(`dozenos-nightly-build`'s nightly workflow, which this document specs the
-*full* version of the mechanism authored here for).
+already run under), and `WORKFLOW-POLICY.md` (#7/#8, where the workflow
+files this document extends come from).
 
 ## 1. The problem: no public mirror, but the ISO still needs to apt-install DozenOS packages
 
@@ -33,10 +32,11 @@ zstd
 
 (`dozenos-1x`, `dozenos-user-utils` — verified present in every build
 flavor's base package set, in the reproduced mode-B clone, §7 below.)
-Every `generic`-flavor build also apt-installs `dozenos-1x-smoketest` via
-`--custom-package` in `package-smoketest.yml` (same source recipe as
-`dozenos-1x` — both are binary packages produced by ONE `dozenos-1x` C2
-build, see §5). With no apt source configured at all, that install fails.
+`development`/`stream`-typed builds (nightlies) also apt-install
+`dozenos-1x-smoketest` via their build-type package list (same source
+recipe as `dozenos-1x` — both are binary packages produced by ONE
+`dozenos-1x` C2 build; see `DEP-GRAPH.md`'s `iso_hard_deps`). With no apt
+source configured at all, that install fails.
 This item closes that gap **without hosting anything**, by building a real
 apt repository that lives only inside the CI job producing the ISO.
 
@@ -219,114 +219,56 @@ packages have, no real DozenOS content):
   `rebuild-packages.yml` already working, not a new dependency this item
   introduces.
 
-## 5. Wiring: `package-smoketest.yml`'s `build_iso` job
+## 5. Wiring: `nightly.yml`'s `build-image` job (dozenos-nightly-build)
 
-Per `SB-SIGNING.md` §6, `package-smoketest.yml` is (still) the only workflow
-that runs a real `build-dozenos-image` end-to-end (item #17's nightly
-workflow is not yet authored). Following that document's own stated pattern
-("item #13's nightly workflow, once authored, should use the same two steps
-verbatim"), this item wires the ephemeral-repo mechanism into the *same*
-job, in the same spirit: exercised on every push that reaches this workflow,
-guarded to a no-op-equivalent fallback when nothing is available yet.
+The only workflow running a real `build-dozenos-image` end-to-end is item
+#17's `nightly.yml` in `dozenos-nightly-build`. Its `build-image` job wires
+the mechanism as:
 
-New steps, in order (see the workflow file's own "adaptation #5" header
-comment for the full rationale):
-
-1. **`Fetch recently built DozenOS packages (best effort)`** (`id:
-   fetch_debs`, `continue-on-error: true`, no `set -e`) — lists up to
-   `$PACKAGE_HISTORY_LIMIT` (50) of the most recent **successful**
-   `rebuild-packages.yml` runs on `rolling` (`gh run list`), then, oldest
-   first, `gh run download`s each one's `deb-*` artifacts into its own
-   `dozenos-debs/run-<id>/` subdirectory (never the same subdirectory
-   twice, so there is no ambiguity about overwrite-vs-error semantics).
-   Every external call has `|| true`; the step never fails the job even if
-   `gh` itself errors. An empty or partially-populated `dozenos-debs/` is a
-   fully valid, expected outcome.
-2. **`Inject MOK signing key+cert`** (unchanged — item #10, still runs
-   before the ISO build, still guarded on the org secrets being configured).
-3. **`Build custom ISO image`** — the `docker run` now also bind-mounts
-   `dozenos-debs/` (always exists, possibly empty) read-only at
-   `/dozenos-debs`. Inside the container, *before* `build-dozenos-image`
-   runs: if any `.deb` is found under `/dozenos-debs`,
+1. **Package sourcing — full, guaranteed-fresh, in-run**: every C2 package
+   (plus the linux-kernel family) is rebuilt in the same run's
+   `build-packages` matrix (the deb cache, `DEB-CACHE.md`, keeps this cheap:
+   every leg either key-hits its full stored unit set or rebuilds it
+   in-run), then consumed via `actions/download-artifact` **without a
+   `run-id`** (defaults to the current run — no cross-run lookup, no risk
+   of a stale or expired artifact).
+2. **`Inject MOK signing key+cert`** (item #10, guarded on the org secrets
+   being configured).
+3. **Build step** — the `docker run` bind-mounts the merged `.deb`s
+   read-only at `/dozenos-debs`. Inside the container, *before*
+   `build-dozenos-image` runs,
    `/dozenos-rebrand/release/make-ephemeral-apt-repo.sh /dozenos-debs
-   /tmp/dozenos-apt-repo` builds the repo and its stdout becomes
-   `--dozenos-mirror`'s value; otherwise `--dozenos-mirror ""` is used,
-   **identical to today's pre-item-#13 behavior**. Building the repo *inside*
-   the same container invocation (rather than on the runner host
-   beforehand) is deliberate: `make-ephemeral-apt-repo.sh`'s own
-   `file://<output-dir>` value is only correct from `build-dozenos-image`'s
-   point of view if both run in the same filesystem/mount namespace — doing
-   it in-container sidesteps host-vs-container path translation entirely.
-   `/tmp/dozenos-apt-repo` (not a root-level path) is used because the
-   script runs as the container's unprivileged build user, before the
-   `sudo --preserve-env ./build-dozenos-image` line drops back to root only
-   for the actual image build.
-4. **`Clean up injected MOK key`** (unchanged — item #10, `always()`-guarded).
+   /tmp/dozenos-apt-repo` builds the repo, which is then served over
+   localhost HTTP (`python3 -m http.server --bind 127.0.0.1`) and consumed
+   as `--dozenos-mirror "[trusted=yes] http://127.0.0.1:8099"` — NOT via
+   the script's `file://` URL: apt runs inside the live-build chroot, whose
+   filesystem root does not contain the container's `/tmp`, so a
+   container-side `file://` path 404s there, while a 127.0.0.1-bound server
+   shares the container network namespace and is reachable from chroot apt
+   at every stage (see `make-ephemeral-apt-repo.sh`'s CONSUMPTION WARNING;
+   do not revisit `file://`).
+4. **`Clean up injected MOK key`** (item #10, `always()`-guarded).
 
-**Permissions**: `build_iso` gained a job-level `permissions: contents:
-read, actions: read` block — `actions: read` is required for `gh run
-list`/`gh run download` against this same repo's own past workflow runs.
-Same-repo only; no new secret (`GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}`, the
-ambient token — `DISTRIBUTION.md` §7's "`GITHUB_TOKEN` suffices" reasoning
-applies identically here: this is not a cross-repo operation, unlike the
-`dozenos-rebrand` checkout in the same job, which genuinely needs a
-cross-repo credential — the runtime-minted org GitHub App token, see
-`CI-SECRETS.md` §4).
+After every flavor builds, `nightly.yml`'s `test-config-load` job runs the
+`make testc` config-load smoketests against the generic-flavor ISO in QEMU,
+and the Release `publish` job requires it — no unverified image is
+published.
 
-**Validated**: `python3 -c "import yaml; yaml.safe_load(...)"` — clean.
-`actionlint` — zero new findings; the tool does flag `secrets.MOK_SIGNING_KEY
-!= ''`-style `if:` conditions with a "context secrets is not allowed here"
-warning, but that is a **pre-existing** false positive already present on
-the *unmodified* item #10 lines (confirmed by running `actionlint` against
-the pristine reproduced clone before this item's changes: identical warning,
-same two lines, just at their original line numbers) — `secrets.*` genuinely
-is valid in a step-level `if:` in real GitHub Actions; `actionlint` is
-conservative here without a config file naming known secrets. Not
-introduced or worsened by this item. Full mode-B reproduction re-run after
-these changes: still exactly 9 residual `vyos` hits (unchanged from
-`overlay-dozenos-build/MANIFEST.md`'s baseline), and the reproduced clone's
-`package-smoketest.yml` is byte-identical to the overlay source. `zero-vyos`
-grep (`grep -ni vyos`) and `uses:.*vyos` grep: both clean on the modified
-file.
+### Retired: `package-smoketest.yml`'s best-effort variant (2026-07-08..2026-07-11)
 
-### Why this is "best effort" here, and what item #17 should do instead
-
-Scanning the last `$PACKAGE_HISTORY_LIMIT` **successful** `rebuild-packages.yml`
-runs only recovers whichever packages happened to be rebuilt (i.e. changed)
-recently — `rebuild-packages.yml`'s own `discover` job only rebuilds
-*changed* package directories per push. A package that has not changed in a
-long time (and whose artifact has since expired past the 7-day
-`retention-days`) will simply be **absent** from the merged `dozenos-debs/`,
-and the resulting ISO build will be missing that package too (apt would
-report an unresolvable dependency at chroot-install time, or, if the missing
-package isn't a hard `Depends` of anything requested, it would just silently
-not be installed). That is an acceptable, honest trade-off for an
-**integration test** whose job is to prove the config-load smoketests still
-pass on the config surface the packages that *have* recently changed expose
-— it is explicitly not a claim that every push produces a complete,
-production-grade image.
-
-Item #17 (`dozenos-nightly-build`'s nightly workflow, not yet authored)
-should **not** reuse this best-effort scan. Instead it should do a **full,
-guaranteed-fresh rebuild of every C2 package in the same run** (a
-`rebuild-packages.yml`-style `discover`+`build` matrix invoked with "all
-packages", not "changed since last push" — `rebuild-packages.yml`'s own
-`workflow_dispatch` input already supports a single-package override; a
-`--all` / empty-input full-discover mode is a small, natural extension of
-its existing `discover` job's `else` branch), then consume those artifacts
-via `actions/download-artifact` **without a `run-id`** (defaults to the
-current run — no cross-run lookup, no `gh run list`/`gh run download`
-needed, no risk of a stale or expired artifact), before calling
-`release/make-ephemeral-apt-repo.sh` and `build-dozenos-image` exactly as
-described in §2-§4 above. This guarantees the nightly's ISO always reflects
-every C2 package's current `rolling`-branch state, not whatever happened to
-survive a 7-day artifact-retention window. `SB-SIGNING.md` §6's "same two
-steps verbatim" guidance for the MOK inject/cleanup steps applies unchanged;
-this document extends that guidance to the ephemeral-apt-repo step as well —
-item #17 should reuse `release/make-ephemeral-apt-repo.sh` verbatim (same
-script, same in-container invocation pattern), only the package-*sourcing*
-step (full matrix vs. best-effort history scan) differs from what is wired
-in `package-smoketest.yml` here.
+The mechanism was originally wired into
+`overlay-dozenos-build/new-files/.github/workflows/package-smoketest.yml`,
+whose `build_iso` job sourced `.deb`s by scanning recent **successful**
+`rebuild-packages.yml` runs' artifacts (best-effort, `gh run list`/`gh run
+download`, 7-day retention). That sourcing was structurally incomplete:
+`rebuild-packages.yml`'s `discover` only rebuilds *changed* package
+directories and excludes `linux-kernel` entirely, so the merged
+`dozenos-debs/` never contained the kernel family, and the chroot install
+of `linux-image-*-dozenos` + the OOT-module packages hard-failed `lb build`
+on every run since landing. The workflow was retired 2026-07-11 (overlay
+file deleted; `rebuild-dispatch.yml`'s in-repo dispatch removed — see
+`REBUILD-DISPATCH.md` §6); its config-load gate moved into `nightly.yml`
+as the `test-config-load` publish gate described above.
 
 ## 6. Strategy-B fallback: `config/packages.chroot/` local embed (documented, not the default)
 
@@ -402,7 +344,7 @@ Verified: `test/test-apply-overlay-dozenos-1x.sh`, 13/13 assertions passing
 
 **#25 (kernel + OOT-module DWARF/mount debranding) →**
 `MLNX-AND-DWARF.md` §3 already establishes the neutral `/dozenos` mount is
-wired into both `rebuild-packages.yml` and `package-smoketest.yml`
+wired into every workflow that builds packages or images
 (`-v .../dozenos-build:/dozenos -w /dozenos`) and the build image's
 `docker/entrypoint.sh` (`USER_NAME="dozenos_bld"`) — confirmed present,
 unchanged, in this item's own reproduced clone (§3 above). The kernel and
@@ -417,17 +359,17 @@ which apt source the ISO's packages came from — the signing hook
 `/boot/vmlinuz` live-build's chroot assembly ends up with, **after** every
 package (including any DozenOS-mirror-sourced kernel package) is installed.
 This item's only interaction with #10/#11 is ordering: `Inject MOK
-signing key+cert` must run (and, per `package-smoketest.yml`'s existing
-wiring, does run) before `Build custom ISO image`, and this item's new
-package-fetch step is placed *before* that too — so by the time
+signing key+cert` must run (and, per `nightly.yml`'s wiring, does run)
+before the image-build step, and the
+package-sourcing step is placed *before* that too — so by the time
 `build-dozenos-image` starts, both the MOK keypair (`data/certificates/`)
 and the ephemeral apt repo (built in-container, right before the
 `build-dozenos-image` invocation itself) are ready. No step reordering
 relative to #10/#11's existing placement was needed or made.
 
-**Net**: a CI run of the wired `package-smoketest.yml` (real secrets
-configured, at least one prior successful `rebuild-packages.yml` run within
-retention) produces an ISO whose `dozenos-1x` carries the #23 fix, whose
+**Net**: a nightly run (real secrets configured — the full package set is
+rebuilt in-run, so no prior-run precondition)
+produces an ISO whose `dozenos-1x` carries the #23 fix, whose
 kernel/OOT modules carry the #25 fix, and whose `/boot/vmlinuz` is MOK-signed
 per #10/#11 — all three riding through the SAME mechanism this item adds
 (deliver whichever recently-built `.deb`s exist, via a real apt repo, to a
