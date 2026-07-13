@@ -377,10 +377,15 @@ cmd_store() {
 # --------------------------------------------------------------------------
 cmd_prune() {
   case "$KEEP" in (*[!0-9]*|'') die "prune: --keep must be a non-negative integer" ;; esac
-  # Releases arrive newest-first from the API; drop everything after the
+  # API order is useless here: list-releases sorts by created_at, which
+  # GitHub sets to the tagged COMMIT's date -- identical for every entry
+  # because all tags point at the seed commit (the tie-break is tag-name
+  # order, i.e. random w.r.t. age). Sort by release id, the only monotonic
+  # store-time signal, so "newest" means most recently stored. Keep the
   # first $KEEP per unit (tag minus the trailing -<12hex> key suffix).
   gh api --paginate "repos/$REPO/releases" \
-    --jq '.[] | .tag_name' | while IFS= read -r tag; do
+    --jq '.[] | "\(.id)\t\(.tag_name)"' \
+    | sort -k1,1 -rn | while IFS=$'\t' read -r _ tag; do
       printf '%s\t%s\n' "$(printf '%s' "$tag" | sed -E 's/-[0-9a-f]{12}$//')" "$tag"
     done | awk -F'\t' -v keep="$KEEP" '{ if (++n[$1] > keep) print $2 }' \
     | while IFS= read -r tag; do

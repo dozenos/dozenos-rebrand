@@ -97,7 +97,10 @@ has no leg of its own there — but harmless.)
 `nightly.yml`'s `prune-deb-cache` job (after a successful publish) keeps
 the newest 3 entries per unit and deletes the rest, tags included. 3, not
 1: a same-day dispatch store plus a possible next-tick re-run may
-legitimately reference two distinct keys for one unit.
+legitimately reference two distinct keys for one unit. "Newest" is judged
+by release id, never by API order or `created_at`: every cache tag points
+at the seed commit, so GitHub reports one identical `created_at` for all
+entries and list-releases order degenerates to tag-name order.
 
 ## 6. Reconciliation with DISTRIBUTION.md §1 ("no public apt mirror")
 

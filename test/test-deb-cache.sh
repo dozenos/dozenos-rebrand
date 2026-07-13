@@ -33,6 +33,12 @@
 #       without needing gh/network.
 #  12.  `probe`/`store` fail loudly on missing required args.
 #  13.  Zero embedded vyos residual in deb-cache.sh itself.
+#  14.  `prune` judges "newest" by release id, not API order: a gh stub
+#       returns entries the way the real API does (created_at identical
+#       for all -- every tag points at the seed commit -- so the order
+#       degenerates to tag-name desc); --keep 3 must delete the
+#       lowest-id entry, not the freshest-stored one that happens to
+#       sort first alphabetically.
 #
 # NOTE: no `set -e` -- this runner tallies pass/fail itself.
 set -uo pipefail
@@ -274,6 +280,37 @@ else ok "store without --key fails"; fi
 if grep -qi vyos "$SCRIPT"; then
   bad "deb-cache.sh contains a vyos token"
 else ok "deb-cache.sh has zero vyos residual"; fi
+
+# --- 14. prune orders by release id, not API order -----------------------------
+STUB="$WORK/stub"
+mkdir -p "$STUB"
+cat > "$STUB/gh" <<'EOF'
+#!/usr/bin/env bash
+case "$1" in
+  api)
+    printf '101\tku-ffffffffffff\n'
+    printf '102\tku-eeeeeeeeeeee\n'
+    printf '103\tku-dddddddddddd\n'
+    printf '104\tku-000000000000\n'
+    printf '105\tkb-aaaaaaaaaaaa\n'
+    printf '106\tkb-999999999999\n'
+    ;;
+  release)
+    [ "$2" = delete ] || exit 2
+    printf '%s\n' "$3" >> "$GH_STUB_DELETED"
+    ;;
+  *) exit 2 ;;
+esac
+EOF
+chmod +x "$STUB/gh"
+DELETED="$WORK/pruned-tags"
+: > "$DELETED"
+GH_STUB_DELETED="$DELETED" PATH="$STUB:$PATH" "$SCRIPT" prune --keep 3 2>/dev/null
+if [ "$(cat "$DELETED")" = "ku-ffffffffffff" ]; then
+  ok "prune deletes the lowest-id entry only (age, not API/tag order)"
+else
+  bad "prune deleted [$(tr '\n' ' ' < "$DELETED")], expected exactly ku-ffffffffffff"
+fi
 
 echo
 echo "test-deb-cache: $pass passed, $fail failed"
