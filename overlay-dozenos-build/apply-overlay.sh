@@ -31,9 +31,12 @@
 #                        step #6 finding, BOTH modes, same reasoning as the
 #                        apt-source host: real, permanent, non-DozenOS-owned
 #                        targets), and remove the inherited MOK cert (item
-#                        #9/#26, BOTH modes). The helper-repo git scm_url
-#                        reverts (item #11) are MODE-DEPENDENT -- see "--ci
-#                        vs --local" below.
+#                        #9/#26, BOTH modes), and remove the VyOS-branded
+#                        boot splash artwork so the isolinux/GRUB menus fall
+#                        back to a solid black background (BOTH modes -- PNG
+#                        artwork the transform cannot debrand). The
+#                        helper-repo git scm_url reverts (item #11) are
+#                        MODE-DEPENDENT -- see "--ci vs --local" below.
 #
 # --ci vs --local (item #18c)
 # ----------------------------------------------------------------------------
@@ -200,5 +203,6 @@ fi
 "$VALUE_FIXES/replace-eula.sh" "$TARGET"
 "$VALUE_FIXES/pin-project-urls.sh" "$TARGET"
 "$VALUE_FIXES/suffix-openssl-version.sh" "$TARGET"
+"$VALUE_FIXES/remove-boot-splash.sh" "$TARGET"
 
 echo "apply-overlay: done (mode=$MODE)"
