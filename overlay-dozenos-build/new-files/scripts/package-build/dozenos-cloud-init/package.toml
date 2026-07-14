@@ -38,7 +38,6 @@
 name = "dozenos-cloud-init"
 commit_id = "rolling"
 scm_url = "https://github.com/dozenos/dozenos-cloud-init.git"
-pre_build_hook = "/dozenos-rebrand/rename-transform.sh ."
 # (the trailing `rm -f cloud-init_all.deb`: bddeb drops that convenience
 # SYMLINK next to the real .deb, and build.py's own copy_packages() step
 # copies every clone-dir `*.deb` up into the recipe dir -- following the

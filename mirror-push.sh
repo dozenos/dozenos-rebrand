@@ -10,7 +10,7 @@
 #   fresh clone upstream @ <branch>
 #     -> rename-transform.sh <clone>            (four-form, keep vyatta)
 #     -> strip <clone>/.github/ entirely
-#     -> [--build-repo: wire-prebuild-hooks.sh + apply-overlay.sh --ci]
+#     -> [--build-repo: apply-overlay.sh --ci]
 #     -> [--overlay <dir>: apply that per-repo overlay]
 #     -> generate <clone>/.github/workflows/sync.yml from sync.yml.template
 #        (item #14, EVERY target -- plain, build-repo, and overlay alike;
@@ -38,7 +38,7 @@
 #                  [--dry-run] [--work <dir>]
 #
 # --dry-run runs the WHOLE pipeline for real (clone/transform/strip/
-# hooks/overlay/verify) against the given <upstream-url> but only PRINTS the
+# overlay/verify) against the given <upstream-url> but only PRINTS the
 # `gh repo create`/`git push` commands instead of running them -- nothing is
 # pushed and no repo is created.
 #
@@ -48,7 +48,6 @@ set -euo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 RENAME_TRANSFORM="$SCRIPT_DIR/rename-transform.sh"
-WIRE_HOOKS="$SCRIPT_DIR/wire-prebuild-hooks.sh"
 APPLY_OVERLAY="$SCRIPT_DIR/overlay-dozenos-build/apply-overlay.sh"
 SYNC_TEMPLATE="$SCRIPT_DIR/sync.yml.template"
 # Checked-in allowlist of DELIBERATE vyos residuals --allow-residuals may
@@ -73,7 +72,7 @@ Usage: mirror-push.sh <upstream-url> --target <name> [options]
   --target <name>      dozenos repo name (required)
   --branch <name>      branch to mirror/push (default: rolling)
   --build-repo         this is the dozenos-build mirror: also run
-                        wire-prebuild-hooks.sh + apply-overlay.sh, and allow
+                        apply-overlay.sh, and allow
                         the whitelisted build-time-pointer residuals.
                         IMPLIES --allow-residuals (the small, known,
                         deliberate residual set is unavoidable for this
@@ -161,7 +160,6 @@ if [ -n "$OVERLAY_DIR" ]; then
 fi
 [ -x "$RENAME_TRANSFORM" ] || die "missing dependency: $RENAME_TRANSFORM"
 if [ "$BUILD_REPO" -eq 1 ]; then
-  [ -x "$WIRE_HOOKS" ]    || die "missing dependency: $WIRE_HOOKS"
   [ -x "$APPLY_OVERLAY" ] || die "missing dependency: $APPLY_OVERLAY"
 fi
 [ -f "$SYNC_TEMPLATE" ]      || die "missing dependency: $SYNC_TEMPLATE"
@@ -297,10 +295,9 @@ rm -rf "$CLONE_DIR/.github"
 # 4) Optional build-repo hooks/overlay + optional per-repo overlay.
 # ------------------------------------------------------------------------- #
 if [ "$BUILD_REPO" -eq 1 ]; then
-  log "4/7 --build-repo: wire-prebuild-hooks.sh + apply-overlay.sh --ci ..."
+  log "4/7 --build-repo: apply-overlay.sh --ci ..."
   PKG_BUILD_DIR="$CLONE_DIR/scripts/package-build"
   [ -d "$PKG_BUILD_DIR" ] || die "--build-repo given but $PKG_BUILD_DIR does not exist"
-  "$WIRE_HOOKS" "$PKG_BUILD_DIR"
   # (cicd.note item #18c, DONE; item #18d, DONE): apply-overlay.sh now has a
   # --ci/--local mode split. dozenos-build is only ever pushed via
   # --build-repo AFTER its dependency mirrors exist (leaf-first push order),
@@ -320,7 +317,7 @@ if [ "$BUILD_REPO" -eq 1 ]; then
   log "NOTE: apply-overlay.sh --ci leaves mirrored git scm_urls at dozenos/*; residuals expected are only the 9 non-git-host/non-mirrored-org build-time pointers in $EXPECTED_RESIDUALS (--build-repo implies --allow-residuals, bounded by that allowlist)"
   "$APPLY_OVERLAY" --ci "$CLONE_DIR"
 else
-  log "4/7 --build-repo not set, skipping wire-prebuild-hooks/apply-overlay"
+  log "4/7 --build-repo not set, skipping apply-overlay"
 fi
 
 if [ -n "$OVERLAY_DIR" ]; then

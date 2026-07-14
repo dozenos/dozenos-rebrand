@@ -68,9 +68,9 @@ if [ -z "$old_block" ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# Fixture: an "already-transformed, already-hooked" target tree -- i.e. the
+# Fixture: an already-transformed target tree -- i.e. the
 # exact input state apply-overlay.sh's own header documents (post
-# rename-transform.sh + wire-prebuild-hooks.sh). Building it directly in
+# rename-transform.sh). Building it directly in
 # post-transform form (rather than re-driving the real four-form transform)
 # keeps this test focused on apply-overlay.sh's own contract.
 # ---------------------------------------------------------------------------

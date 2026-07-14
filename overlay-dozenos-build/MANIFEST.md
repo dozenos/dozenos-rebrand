@@ -23,7 +23,7 @@ non-directory) node name — see `../DEP-GRAPH.md`'s "Flagged, not fixed"
 section and `../REBUILD-DISPATCH.md` §11 for the full writeup).
 `overlay-dozenos-build/apply-overlay.sh`
 runs all three buckets below, in order, against a tree that already had
-`rename-transform.sh` and `../wire-prebuild-hooks.sh` applied, in either
+`rename-transform.sh` applied, in either
 `--ci` (default) or `--local` mode — see `README.md`'s "Modes" section for
 what differs between them (only `pin-helper-scm-urls.sh`, see its row below).
 See `README.md` for the full pipeline position and `apply-overlay.sh`'s own
@@ -106,10 +106,8 @@ checked-in source. `release/`'s two scripts are the opposite: they are
 `rebuild-packages.yml`'s own `Checkout dozenos-rebrand` step, which the
 nightly workflow will do too). They never get copied into `dozenos-build`
 or any other mirrored repo's tree, so `overlay-dozenos-build/apply-overlay.sh` correctly
-never touches them. Same category as `rename-transform.sh` and
-`wire-prebuild-hooks.sh` (both also toolkit root, both also referenced by
-absolute `/dozenos-rebrand/...` path from inside a build container) — not
-overlay content, one level up from this manifest's scope.
+never touches them. Same category as `rename-transform.sh` (also toolkit
+root) — not overlay content, one level up from this manifest's scope.
 
 ## Per-repo overlay split (read this first)
 

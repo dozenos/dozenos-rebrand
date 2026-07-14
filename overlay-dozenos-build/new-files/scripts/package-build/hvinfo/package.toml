@@ -2,5 +2,4 @@
 name = "hvinfo"
 commit_id = "rolling"
 scm_url = "https://github.com/dozenos/hvinfo.git"
-pre_build_hook = "/dozenos-rebrand/rename-transform.sh ."
 build_cmd = "dpkg-buildpackage -us -uc -tc -b"

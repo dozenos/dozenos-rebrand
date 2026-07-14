@@ -60,8 +60,7 @@ jobs:
         run: |
           set -euo pipefail
           # linux-kernel is excluded: its bespoke multi-package build.py is
-          # not a generic C2 recipe and never reads pre_build_hook (see
-          # wire-prebuild-hooks.sh's EXCLUDE_RECIPES). shim-signed is
+          # not a generic C2 recipe. shim-signed is
           # excluded: its Build-Depends pins `shim-unsigned (= <ver>+dozenos1)`,
           # a Secure Boot shim DozenOS deliberately does not rebuild (the
           # ISO uses Debian's stock shim-signed -- see
@@ -132,10 +131,8 @@ jobs:
         with:
           path: dozenos-build
 
-      # /dozenos-rebrand must exist at that exact absolute path inside the
-      # build container: every C2 recipe's package.toml carries
-      # `pre_build_hook = "/dozenos-rebrand/rename-transform.sh ."`, which
-      # build.py shells out to.
+      # deb-cache.sh and its cache-key inputs live in dozenos-rebrand
+      # (DEB-CACHE.md).
       - name: Mint GitHub App token (dozenos-rebrand checkout)
         id: app_token
         uses: actions/create-github-app-token@v3
@@ -194,7 +191,6 @@ jobs:
         run: |
           docker run --rm \
             -v "${{ github.workspace }}/dozenos-build:/dozenos" \
-            -v "${{ github.workspace }}/dozenos-rebrand:/dozenos-rebrand" \
             -w /dozenos \
             ghcr.io/dozenos/dozenos-build:rolling \
             bash -c "cd scripts/package-build/${{ matrix.pkg }} && python3 ../build.py"

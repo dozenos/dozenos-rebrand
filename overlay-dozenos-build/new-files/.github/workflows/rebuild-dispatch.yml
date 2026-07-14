@@ -127,8 +127,8 @@ jobs:
 
   # build: the matrix is exactly resolve's deduped build-unit set. Same
   # build shape as ../rebuild-packages.yml (container
-  # ghcr.io/dozenos/dozenos-build:rolling, /dozenos + /dozenos-rebrand
-  # mounts, deb-<unit> artifact upload).
+  # ghcr.io/dozenos/dozenos-build:rolling, /dozenos mount,
+  # deb-<unit> artifact upload).
   build:
     needs: resolve
     if: needs.resolve.outputs.any == 'true'
@@ -143,9 +143,8 @@ jobs:
         with:
           path: dozenos-build
 
-      # Required for every C2 recipe's `pre_build_hook =
-      # "/dozenos-rebrand/rename-transform.sh ."` (see
-      # ../rebuild-packages.yml's comment).
+      # deb-cache.sh and its cache-key inputs live in dozenos-rebrand
+      # (DEB-CACHE.md).
       - name: Mint GitHub App token (dozenos-rebrand checkout)
         id: app_token
         uses: actions/create-github-app-token@v3
@@ -218,14 +217,12 @@ jobs:
             echo "I: linux-kernel FULL-family build (resolved trigger blocks: ${{ join(matrix.unit.kernel_blocks, ' ') }})"
             docker run --rm \
               -v "${{ github.workspace }}/dozenos-build:/dozenos" \
-              -v "${{ github.workspace }}/dozenos-rebrand:/dozenos-rebrand" \
               -w /dozenos \
               ghcr.io/dozenos/dozenos-build:rolling \
               bash -c "cd scripts/package-build/linux-kernel && python3 build.py"
           else
             docker run --rm \
               -v "${{ github.workspace }}/dozenos-build:/dozenos" \
-              -v "${{ github.workspace }}/dozenos-rebrand:/dozenos-rebrand" \
               -w /dozenos \
               ghcr.io/dozenos/dozenos-build:rolling \
               bash -c "cd scripts/package-build/$RECIPE && python3 ../build.py"

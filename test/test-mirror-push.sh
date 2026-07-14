@@ -408,7 +408,7 @@ fi
 # --allow-residuals. Driven
 # against the real local vyos-build checkout via a file:// URL (a plain local
 # filesystem clone -- not a network host) so the fixture exercises the actual
-# wire-prebuild-hooks.sh + apply-overlay.sh --ci + new-files/ overlay content
+# apply-overlay.sh --ci + new-files/ overlay content
 # (item #18d's actual fix target), rather than a hand-rolled synthetic stand-in
 # that could accidentally not exercise the real overlay files at all.
 # ---------------------------------------------------------------------------

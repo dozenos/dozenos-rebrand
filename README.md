@@ -39,11 +39,6 @@ files, where `vyos` is data, not a shipped artifact) while leaving every
 - **`rename-transform.sh`** / **`rebrand-map.conf`** -- the deterministic
   four-form rename/rewrite. Pure text transform, no external state, safe to
   run unattended in CI. `--verify` asserts zero residual `vyos` tokens.
-- **`wire-prebuild-hooks.sh`** -- ensures every recipe that clones its own
-  upstream source at build time (`scripts/package-build/*/package.toml`) runs
-  `rename-transform.sh` against that freshly cloned source via a
-  `pre_build_hook`, so recipe-built package content is rebranded too, not
-  just the tree the recipe itself lives in.
 - **`mirror-push.sh`** -- the end-to-end mirror-push pipeline: clone upstream
   -> transform -> strip `.github/` -> optional build-repo/overlay steps ->
   generate `sync.yml` from `sync.yml.template` -> verify -> push to

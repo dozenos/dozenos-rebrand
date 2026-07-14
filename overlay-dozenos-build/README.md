@@ -2,7 +2,7 @@
 
 **Status: populated (item #18b).** This directory is the landing zone for
 everything a fresh `vyos-build` clone needs *in addition to*
-`rename-transform.sh` + `../wire-prebuild-hooks.sh` to reproduce our full
+`rename-transform.sh` to reproduce our full
 DozenOS delta, applied by `apply-overlay.sh`. See
 `../TRANSFORM-COMPLETENESS-AUDIT.md` (item #18) for the full audit this
 overlay is derived from, and `MANIFEST.md` for exactly what landed in each
@@ -23,10 +23,8 @@ why it's safe to run unattended in CI. But it structurally **cannot**:
   mirror URL known at transform time?) or add non-renaming logic
   (an `if vyos_mirror:` guard, a build-env-leak strip step) — `logic-patches/`
 
-Everything the transform *can* do deterministically (four-form renames,
-including the `pre_build_hook` wiring described in the audit's item #4,
-implemented as `../wire-prebuild-hooks.sh`) should stay in
-`rename-transform.sh`/`rebrand-map.conf`/`wire-prebuild-hooks.sh`, not here.
+Everything the transform *can* do deterministically (four-form renames)
+should stay in `rename-transform.sh`/`rebrand-map.conf`, not here.
 If you're tempted to add a plain string substitution to this overlay, it
 probably belongs in `rebrand-map.conf` instead.
 
@@ -62,13 +60,10 @@ overlay-dozenos-build/
 
 1. `git clone` a fresh upstream `vyos-build@rolling`.
 2. Run `rename-transform.sh <tree>` (four-form + email rewrite).
-3. Run `../wire-prebuild-hooks.sh <tree>/scripts/package-build` (injects
-   `pre_build_hook` into every recipe block that needs it and doesn't
-   already have one; excludes `linux-kernel` — see audit item #4 / MANIFEST.md).
-4. Run `overlay-dozenos-build/apply-overlay.sh [--ci|--local] <tree>` (new-files ->
+3. Run `overlay-dozenos-build/apply-overlay.sh [--ci|--local] <tree>` (new-files ->
    logic-patches -> value-fixes, in that order; see `apply-overlay.sh`'s own
    header for exactly what each step does, and "Modes" below).
-5. Build.
+4. Build.
 
 Every step above must be idempotent and side-effect-free when re-run (same
 contract `rename-transform.sh` already holds), since CI may retry.
