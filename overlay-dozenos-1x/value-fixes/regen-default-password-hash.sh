@@ -37,12 +37,12 @@
 # the salt) so a) a second run against an already-fixed tree is a clean
 # no-op (the old hash is simply absent -- absence IS the desired end state,
 # not an error), and b) we never risk touching some OTHER unrelated `$6$`
-# hash that happens to also live in the tree. `openssl passwd -6` is a
-# fresh-salt operation, so re-running this script when it DOES have work to
-# do produces a different (but equally valid) hash each time -- this is
-# expected and fine, there is no canonical "the" new hash, only "a" valid
-# hash of `dozenos`, which every consumer (config.boot.default, the
-# smoketests, the python test asserting the login flow) treats identically.
+# hash that happens to also live in the tree. The replacement NEW_HASH is a
+# PINNED constant (generated once with `openssl passwd -6 dozenos`), NOT a
+# fresh-salt hash per run: the sync pipeline is fresh-clone -> transform ->
+# overlay, so a per-run salt made every daily sync commit differ even with
+# an unchanged upstream, dispatching spurious package rebuilds and nightly
+# ISO builds.
 #
 # Whole-tree search (not just the 5 known files): the fixed file list above
 # is what upstream ships as of the last verification, but this script greps
@@ -81,9 +81,7 @@
 # Verification uses `openssl passwd -6 -salt <extracted-salt> dozenos`
 # rather than Python's `crypt` module: `crypt` was removed from the Python
 # standard library (PEP 594, gone as of 3.13), so it cannot be relied on in
-# the sync environment; `openssl passwd -6` is local-only (no network I/O)
-# and already a hard dependency of this script (see the NEW_HASH generation
-# below), so re-using it for verification adds no new dependency.
+# the sync environment; `openssl passwd -6` is local-only (no network I/O).
 #
 # Usage:
 #   regen-default-password-hash.sh <target-tree>
@@ -107,6 +105,13 @@ command -v python3 >/dev/null 2>&1 || die "python3 not found on PATH"
 # shellcheck disable=SC2016 # literal crypt hash, must NOT expand
 OLD_HASH='$6$QxPS.uk6mfo$9QBSo8u1FkH16gMyAVhus6fU3LOzvLR9Z9.82m3tiHFAxTtIkhaZSWssSgzt4v4dGAL8rhVQxTg0oAG9/q11h/'
 
+# Pinned SHA-512 crypt hash of the new default password `dozenos`, generated
+# once with `openssl passwd -6 dozenos` -- see "Idempotent" above for why
+# this must be a constant, not regenerated per run. The end-state self-check
+# below verifies it authenticates `dozenos`, so a typo here fails closed.
+# shellcheck disable=SC2016 # literal crypt hash, must NOT expand
+NEW_HASH='$6$p5Efu/2e2g8D2hJV$2jJojvJpg/NJ1ytL9Q73zsG./pdfrtJS5WU6R3VQzx0.HAucjiKixguM/DVtamnXnp0Al8bFdL7SrWQ84G1cN0'
+
 # The 5 known files that must carry the default-user password hash -- see
 # the "Targets" comment above. Used by the end-state self-check below, in
 # addition to (not instead of) the whole-tree grep this script already does
@@ -127,14 +132,6 @@ mapfile -d '' -t HIT_FILES < <(grep -rlFZ "$OLD_HASH" "$TARGET" --exclude-dir=.g
 if [ "${#HIT_FILES[@]}" -eq 0 ]; then
   echo "regen-default-password-hash: no occurrences of the known old hash literal found (already fixed, or upstream hash drifted -- self-check below decides which)"
 else
-  NEW_HASH=$(openssl passwd -6 dozenos)
-  [ -n "$NEW_HASH" ] || die "openssl passwd -6 produced empty output"
-  # shellcheck disable=SC2016 # literal `$6$` prefix pattern, must NOT expand
-  case "$NEW_HASH" in
-    '$6$'*) : ;;
-    *) die "openssl passwd -6 produced an unexpected format: $NEW_HASH" ;;
-  esac
-
   for f in "${HIT_FILES[@]}"; do
     OLD_HASH="$OLD_HASH" NEW_HASH="$NEW_HASH" python3 - "$f" <<'PY'
 import os
@@ -157,7 +154,7 @@ PY
     echo "regen-default-password-hash: patched ${f#"$TARGET"/}"
   done
 
-  echo "regen-default-password-hash: ${#HIT_FILES[@]} file(s) patched with a freshly generated hash of 'dozenos'"
+  echo "regen-default-password-hash: ${#HIT_FILES[@]} file(s) patched with the pinned hash of 'dozenos'"
 fi
 
 # ---------------------------------------------------------------------------
