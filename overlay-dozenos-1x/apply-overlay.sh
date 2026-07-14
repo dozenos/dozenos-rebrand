@@ -34,6 +34,15 @@
 #      found by ../REPOINT-AUDIT.md's step #6 cross-check. See that script's
 #      own header for the full rationale.
 #
+#   4. value-fixes/strip-motd-logo-frame.sh -- remove the VyOS box-drawing
+#      logo frame from the post-login MOTD template default_motd.j2, keeping
+#      the version text. The four-form pass swaps the WORD `VyOS` but leaves
+#      the frame graphic (which carries no brand text) intact; this removes
+#      it. See that script's own header for the exact block matched.
+#
+# (pin-opam-ocaml-branch.sh runs as step 3/4 -- see the NOT-here note below
+# for why it exists.)
+#
 # What is deliberately NOT here (verified against a fresh upstream clone --
 # see dozenos-rebrand/overlay-dozenos-build/MANIFEST.md's "Per-repo overlay split" section
 # for where these were first flagged as vyos-1x-repo concerns):
@@ -109,13 +118,16 @@ TARGET=$(cd "$TARGET" && pwd)
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 VALUE_FIXES="$SCRIPT_DIR/value-fixes"
 
-echo "== apply-overlay (dozenos-1x): step 1/3 -- value-fixes/regen-default-password-hash.sh =="
+echo "== apply-overlay (dozenos-1x): step 1/4 -- value-fixes/regen-default-password-hash.sh =="
 "$VALUE_FIXES/regen-default-password-hash.sh" "$TARGET"
 
-echo "== apply-overlay (dozenos-1x): step 2/3 -- value-fixes/pin-nonmirrored-org-refs.sh =="
+echo "== apply-overlay (dozenos-1x): step 2/4 -- value-fixes/pin-nonmirrored-org-refs.sh =="
 "$VALUE_FIXES/pin-nonmirrored-org-refs.sh" "$TARGET"
 
-echo "== apply-overlay (dozenos-1x): step 3/3 -- value-fixes/pin-opam-ocaml-branch.sh =="
+echo "== apply-overlay (dozenos-1x): step 3/4 -- value-fixes/pin-opam-ocaml-branch.sh =="
 "$VALUE_FIXES/pin-opam-ocaml-branch.sh" "$TARGET"
+
+echo "== apply-overlay (dozenos-1x): step 4/4 -- value-fixes/strip-motd-logo-frame.sh =="
+"$VALUE_FIXES/strip-motd-logo-frame.sh" "$TARGET"
 
 echo "apply-overlay (dozenos-1x): done"
