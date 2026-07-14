@@ -19,7 +19,6 @@ on:
       - rolling
     paths:
       - 'scripts/package-build/**'
-      - '!scripts/package-build/linux-kernel/**'
       # shim-signed/unionfs-fuse are never auto-built -- see the discover
       # step's comment.
       - '!scripts/package-build/shim-signed/**'
@@ -30,6 +29,16 @@ on:
         description: 'Single package dir under scripts/package-build/ to rebuild (blank = discover all non-excluded packages)'
         required: false
         type: string
+
+# Serialize whole runs (same shape as rebuild-dispatch.yml's group): with
+# linux-kernel in the matrix a leg can hold a runner for ~2h, and two
+# overlapping runs would double-build it for no gain. cancel-in-progress
+# stays false -- a running build's store must complete; a collapsed pending
+# run's changes are still covered by the survivor's notify (nightly's
+# change-gate reads CURRENT mirror HEADs, not the triggering push).
+concurrency:
+  group: dozenos-rebuild-packages
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -59,8 +68,12 @@ jobs:
           AFTER: ${{ github.event.after }}
         run: |
           set -euo pipefail
-          # linux-kernel is excluded: its bespoke multi-package build.py is
-          # not a generic C2 recipe. shim-signed is
+          # vpp folds into the linux-kernel unit: the kernel family's
+          # build-accel-ppp-ng.sh builds vpp itself (HAVE_VPP) and its debs
+          # ship from linux-kernel/, so a standalone vpp leg would produce a
+          # second, differently-versioned vpp set (the exact dup that broke
+          # the ISO apt pool -- see dozenos-nightly-build's discover
+          # comment). shim-signed is
           # excluded: its Build-Depends pins `shim-unsigned (= <ver>+dozenos1)`,
           # a Secure Boot shim DozenOS deliberately does not rebuild (the
           # ISO uses Debian's stock shim-signed -- see
@@ -74,11 +87,12 @@ jobs:
           # diff only). The ISO must install Debian's stock unionfs-fuse.
           discover_all() {
             find scripts/package-build -mindepth 1 -maxdepth 1 -type d \
-              ! -name linux-kernel ! -name shim-signed ! -name unionfs-fuse \
+              ! -name vpp ! -name shim-signed ! -name unionfs-fuse \
               -printf '%f\n' \
               | sort | jq -R . | jq -sc .
           }
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "$INPUT_PACKAGE_NAME" ]; then
+            [ "$INPUT_PACKAGE_NAME" = "vpp" ] && INPUT_PACKAGE_NAME="linux-kernel"
             packages=$(jq -cn --arg p "$INPUT_PACKAGE_NAME" '[$p]')
           elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             packages=$(discover_all)
@@ -102,7 +116,8 @@ jobs:
             fi
             if [ "$diff_ok" = 1 ]; then
               changed=$(printf '%s\n' "$changed_files" \
-                | awk -F/ '{print $3}' | sort -u | grep -vxE 'linux-kernel|shim-signed|unionfs-fuse' || true)
+                | awk -F/ '{print $3}' | sed 's/^vpp$/linux-kernel/' \
+                | sort -u | grep -vxE 'shim-signed|unionfs-fuse' || true)
               packages=$(printf '%s\n' "$changed" | jq -R . | jq -sc 'map(select(length > 0))')
             else
               echo "::warning::cannot diff $BEFORE..$AFTER (branch creation or force-push) -- falling back to the FULL package set (deb-cache keeps unchanged units cheap)"
@@ -189,11 +204,23 @@ jobs:
       - name: Build ${{ matrix.pkg }}
         if: steps.probe.outputs.hit != 'true'
         run: |
-          docker run --rm \
-            -v "${{ github.workspace }}/dozenos-build:/dozenos" \
-            -w /dozenos \
-            ghcr.io/dozenos/dozenos-build:rolling \
-            bash -c "cd scripts/package-build/${{ matrix.pkg }} && python3 ../build.py"
+          set -euo pipefail
+          if [ "${{ matrix.pkg }}" = "linux-kernel" ]; then
+            # Bespoke driver, FULL-family build (kernel + every OOT block +
+            # vpp) -- same branch and rationale as rebuild-dispatch.yml's
+            # build step.
+            docker run --rm \
+              -v "${{ github.workspace }}/dozenos-build:/dozenos" \
+              -w /dozenos \
+              ghcr.io/dozenos/dozenos-build:rolling \
+              bash -c "cd scripts/package-build/linux-kernel && python3 build.py"
+          else
+            docker run --rm \
+              -v "${{ github.workspace }}/dozenos-build:/dozenos" \
+              -w /dozenos \
+              ghcr.io/dozenos/dozenos-build:rolling \
+              bash -c "cd scripts/package-build/${{ matrix.pkg }} && python3 ../build.py"
+          fi
 
       # Token minted AFTER the build (App tokens live ~1h; a slow leg would
       # outlive a pre-build mint); continue-on-error because a cache write
@@ -229,3 +256,44 @@ jobs:
           path: dozenos-build/scripts/package-build/${{ matrix.pkg }}/*.deb
           if-no-files-found: warn
           retention-days: 7
+
+  # notify-nightly: signal dozenos-nightly-build AFTER the deb-cache is
+  # pre-warmed, so the image build's package legs probe-hit instead of
+  # rebuilding. This replaces sync.yml's direct image dispatch for pushes
+  # that touch scripts/package-build/** (sync.yml still direct-dispatches
+  # machinery-only pushes, which never trigger this workflow). Runs only
+  # when every build leg succeeded -- a red rebuild must not advance the
+  # nightly change-gate baseline. Cross-repo dispatch needs an App token,
+  # not GITHUB_TOKEN.
+  notify-nightly:
+    needs: [discover, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Mint GitHub App token (dozenos-nightly-build notify)
+        id: app_token
+        continue-on-error: true
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.BUILD_APP_ID }}
+          private-key: ${{ secrets.BUILD_APP_PRIVATE_KEY }}
+          owner: dozenos
+          repositories: dozenos-nightly-build
+
+      # Best-effort (continue-on-error): a failed dispatch must never fail
+      # the rebuild that already succeeded; the weekly forced heartbeat and
+      # the next change signal both self-heal a lost notify.
+      - name: Best-effort notify dozenos-nightly-build
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ steps.app_token.outputs.token }}
+        run: |
+          set -uo pipefail
+          if gh api repos/dozenos/dozenos-nightly-build/dispatches \
+            -f event_type="dozenos-image-build-requested" \
+            -F "client_payload[package]=dozenos-build" 2>&1; then
+            echo "I: notified dozenos/dozenos-nightly-build"
+          else
+            echo "::warning::notify dispatch to dozenos-nightly-build failed (best-effort; heartbeat/next signal self-heals)"
+          fi

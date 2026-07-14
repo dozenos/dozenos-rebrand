@@ -555,6 +555,11 @@ case "$MODE" in
     # --force is acceptable here only because the target repo is new/empty.
     git -C "$CLONE_DIR" push --force -u origin "$BRANCH"
     log "seed push complete: dozenos/$TARGET @ $BRANCH"
+    # Consumed by the generated sync.yml's dispatch routing (dozenos-build
+    # only): seed = the whole recipe set is new, so always report true.
+    if [ "$BUILD_REPO" -eq 1 ]; then
+      log "recipes-changed: true"
+    fi
 
     # GAP found cicd.note item #19 cycle 12: `gh repo create` + push alone
     # leaves the new repo's `default_branch` unset. Set it explicitly.
@@ -583,6 +588,23 @@ case "$MODE" in
       # Fast-forward push only -- NEVER --force after the seed.
       git -C "$SYNC_DIR" push origin "$BRANCH"
       log "sync push complete: dozenos/$TARGET @ $BRANCH"
+      # Consumed by the generated sync.yml's dispatch routing (dozenos-build
+      # only): a snapshot that touches scripts/package-build/** (minus the
+      # never-auto-built shim-signed/unionfs-fuse) triggers
+      # rebuild-packages.yml on the mirror, which pre-warms the deb cache
+      # and notifies the image build itself -- sync.yml then skips its
+      # direct image dispatch. Must mirror rebuild-packages.yml's `on:
+      # push: paths:` filter exactly: a mismatch in the "false" direction
+      # means NOBODY dispatches the image build for that snapshot.
+      if [ "$BUILD_REPO" -eq 1 ]; then
+        if git -C "$SYNC_DIR" diff --name-only HEAD~1..HEAD -- scripts/package-build/ \
+            | grep -vE '^scripts/package-build/(shim-signed|unionfs-fuse)/' \
+            | grep -q .; then
+          log "recipes-changed: true"
+        else
+          log "recipes-changed: false"
+        fi
+      fi
     fi
     ;;
 esac

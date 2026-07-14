@@ -118,6 +118,13 @@ jobs:
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
+          # mirror-push.sh emits this marker for --build-repo targets only;
+          # every other mirror greps nothing and reports false (unused).
+          if grep -qF 'recipes-changed: true' "$out_file"; then
+            echo "recipes_changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "recipes_changed=false" >> "$GITHUB_OUTPUT"
+          fi
 
       # Cross-repo dispatch needs a cross-repo credential -- the self-push
       # token above is scoped to THIS repo only. Scoped to both possible
@@ -141,20 +148,30 @@ jobs:
         if: steps.mirror_push.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ steps.app_token.outputs.token }}
+          RECIPES_CHANGED: ${{ steps.mirror_push.outputs.recipes_changed }}
         run: |
           set -euo pipefail
-          # dozenos-build syncing itself is a build-MACHINERY change, not a
-          # package change: it is not a node in dep-graph.json, so a
-          # package-rebuild dispatch for it would resolve to an empty set --
-          # a no-op that would also mean no image-build signal at all now
-          # that image builds are trigger-based. So dozenos-build dispatches
-          # straight to dozenos-nightly-build (gated there by the nightly's
-          # own change-gate fingerprint, which includes dozenos-build);
-          # every other mirror dispatches the normal package-rebuild into
+          # dozenos-build syncing itself is not a dep-graph node, so a
+          # package-rebuild dispatch for it would resolve to an empty set.
+          # Routing instead splits on WHAT the snapshot touched:
+          #   recipe change (scripts/package-build/**) -> the push triggers
+          #     rebuild-packages.yml on the mirror, which pre-warms the deb
+          #     cache and notifies dozenos-nightly-build itself when green
+          #     -- dispatching here too would start the image build in
+          #     parallel with the package rebuild, cache-missing everything
+          #     it races (worst: a duplicate ~2h linux-kernel build);
+          #   machinery-only change -> rebuild-packages.yml never fires, so
+          #     the image build is dispatched directly (gated there by the
+          #     nightly's own change-gate fingerprint).
+          # Every other mirror dispatches the normal package-rebuild into
           # dozenos-build, and the image build follows from that rebuild's
           # completion dispatch.
           if [ "$REPO_NAME" = "dozenos-build" ]; then
-            echo "I: this mirror IS dozenos-build -- build-machinery change; dispatching an image rebuild directly (no package-rebuild to resolve)."
+            if [ "$RECIPES_CHANGED" = "true" ]; then
+              echo "I: this mirror IS dozenos-build -- recipe change; rebuild-packages.yml pre-warms the deb cache and notifies the image build itself; skipping the direct dispatch."
+              exit 0
+            fi
+            echo "I: this mirror IS dozenos-build -- machinery-only change; dispatching an image rebuild directly (no package-rebuild to resolve)."
             gh api repos/dozenos/dozenos-nightly-build/dispatches \
               -f event_type="dozenos-image-build-requested" \
               -F "client_payload[package]=$REPO_NAME"
