@@ -200,6 +200,15 @@ bugtracker_url = "https://dozenos.dev"
 documentation_url = "https://docs.dozenos.io/en/latest"
 project_news_url = "https://blog.dozenos.io"
 EOF
+
+  # -- value-fixes/remove-boot-splash.sh targets: two real PNGs (valid magic
+  #    bytes, since the script hex-checks before deleting) + the grub theme
+  #    line it rewrites --
+  mkdir -p "$t/data/live-build-config/includes.binary/isolinux"
+  mkdir -p "$t/data/live-build-config/bootloaders/grub-pc/live-theme"
+  printf '\x89PNG\r\n\x1a\n' > "$t/data/live-build-config/includes.binary/isolinux/splash.png"
+  printf '\x89PNG\r\n\x1a\n' > "$t/data/live-build-config/bootloaders/grub-pc/splash.png"
+  printf 'title-text: ""\ndesktop-image: "../splash.png"\n' > "$t/data/live-build-config/bootloaders/grub-pc/live-theme/theme.txt"
 }
 
 assert_ci_state() {
@@ -356,6 +365,20 @@ assert_both_modes_state() {
     ok "$label: new-files/ recipe (hvinfo) copied in (both modes)"
   else
     bad "$label: new-files/ recipe (hvinfo) missing"
+  fi
+
+  local lbc="$tree/data/live-build-config"
+  if [ ! -e "$lbc/includes.binary/isolinux/splash.png" ] \
+     && [ ! -e "$lbc/bootloaders/grub-pc/splash.png" ]; then
+    ok "$label: both boot splash PNGs removed (both modes)"
+  else
+    bad "$label: boot splash PNG(s) still present"
+  fi
+  if grep -qF 'desktop-color: "#000000"' "$lbc/bootloaders/grub-pc/live-theme/theme.txt" \
+     && ! grep -qF 'desktop-image' "$lbc/bootloaders/grub-pc/live-theme/theme.txt"; then
+    ok "$label: grub theme.txt rewritten to solid desktop-color (both modes)"
+  else
+    bad "$label: grub theme.txt not rewritten"; cat "$lbc/bootloaders/grub-pc/live-theme/theme.txt"
   fi
 }
 
