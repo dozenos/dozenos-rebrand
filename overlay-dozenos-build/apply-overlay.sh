@@ -202,7 +202,6 @@ fi
 "$VALUE_FIXES/remove-committed-mok-cert.sh" "$TARGET"
 "$VALUE_FIXES/replace-eula.sh" "$TARGET"
 "$VALUE_FIXES/pin-project-urls.sh" "$TARGET"
-"$VALUE_FIXES/suffix-openssl-version.sh" "$TARGET"
 "$VALUE_FIXES/remove-boot-splash.sh" "$TARGET"
 
 echo "apply-overlay: done (mode=$MODE)"
