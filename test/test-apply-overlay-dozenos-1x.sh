@@ -32,6 +32,11 @@
 #      re-salted/reformatted it) that does NOT authenticate `dozenos`, the
 #      overlay must fail loudly instead of silently no-op'ing, even when the
 #      other known files still match OLD_HASH and get patched normally.
+#   9. value-fixes/strip-motd-logo-frame.sh: the framed MOTD version block
+#      is collapsed to the frameless line.
+#  10. value-fixes/fix-snmp-test-localized-keys.sh: the four upstream SNMPv3
+#      localized-key constants are recomputed for the transformed
+#      (`dozenos...`) plaintext passwords.
 #
 # NOTE: no `set -e` -- this runner tallies pass/fail itself.
 set -uo pipefail
@@ -144,6 +149,37 @@ depends:
 		opam pin add dozenos1x-config https://github.com/dozenos/dozenos1x-config.git#0123456789abcdef0123456789abcdef01234567 -y ; \
 		opam pin add vyconf https://github.com/dozenos/vyconf.git#89abcdef0123456789abcdef0123456789abcdef -y'
 EOF
+
+  # strip-motd-logo-frame.sh target: the post-transform framed MOTD block.
+  mkdir -p "$t/data/templates/login"
+  cat > "$t/data/templates/login/default_motd.j2" <<'EOF'
+Welcome to DozenOS!
+
+   ┌── ┐
+   . DozenOS {{ version_data.version }}
+   └ ──┘  {{ version_data.release_train }}
+
+ * Documentation:  https://docs.dozenos.io/en/latest
+EOF
+
+  # fix-snmp-test-localized-keys.sh target: post-transform passwords with
+  # upstream's four stale localized-key constants (real repo values).
+  mkdir -p "$t/smoketest/scripts/cli"
+  cat > "$t/smoketest/scripts/cli/test_service_snmp.py" <<'EOF'
+snmpv3_user = 'dozenos'
+snmpv3_auth_pw = 'dozenos12345678'
+snmpv3_priv_pw = 'dozenos87654321'
+snmpv3_engine_id = '000000000000000000000002'
+
+class TestSNMPService:
+    def test_snmpv3_sha(self):
+        hashed_password = '4e52fe55fd011c9c51ae2c65f4b78ca93dcafdfe'
+        hashed_password = '54705c8de9e81fdf61ad7ac044fa8fe611ddff6b'
+
+    def test_snmpv3_md5(self):
+        hashed_password = '4c67690d45d3dfcd33d0d7e308e370ad'
+        hashed_password = 'e11c83f2c510540a3c4de84ee66de440'
+EOF
 }
 
 # ---------------------------------------------------------------------------
@@ -237,6 +273,36 @@ if grep -qF 'dozenos1x-config.git#rolling' "$TREE/libdozenosconfig/Makefile" \
   ok "opam pins re-pinned to #rolling (no leftover #<sha>)"
 else
   bad "opam pins not re-pinned to #rolling"; cat "$TREE/libdozenosconfig/Makefile"
+fi
+
+# 8. strip-motd-logo-frame.sh: framed block collapsed to the frameless line,
+#    surrounding template text untouched.
+MOTD="$TREE/data/templates/login/default_motd.j2"
+if grep -qF '   DozenOS {{ version_data.version }} {{ version_data.release_train }}' "$MOTD" \
+   && ! grep -qF '┌── ┐' "$MOTD" \
+   && grep -qF 'Welcome to DozenOS!' "$MOTD"; then
+  ok "MOTD logo frame stripped to the frameless version line"
+else
+  bad "MOTD logo frame not stripped as expected"; cat "$MOTD"
+fi
+
+# 9. fix-snmp-test-localized-keys.sh: the four stale upstream constants are
+#    replaced by RFC 3414 localized keys of the transformed passwords
+#    (expected values precomputed with the same validated algorithm -- see
+#    that script's header).
+SNMP="$TREE/smoketest/scripts/cli/test_service_snmp.py"
+if ! grep -qE '4e52fe55fd011c9c51ae2c65f4b78ca93dcafdfe|54705c8de9e81fdf61ad7ac044fa8fe611ddff6b|4c67690d45d3dfcd33d0d7e308e370ad|e11c83f2c510540a3c4de84ee66de440' "$SNMP"; then
+  ok "stale upstream SNMPv3 localized-key constants removed"
+else
+  bad "stale upstream SNMPv3 localized-key constants still present"; cat "$SNMP"
+fi
+if grep -qF "hashed_password = 'f7bd96f7c40818cc0cd36ded48e1dfa5a8efa351'" "$SNMP" \
+   && grep -qF "hashed_password = '54d003809561536653710c25d687e2668cd27f1c'" "$SNMP" \
+   && grep -qF "hashed_password = '7655fac299e8db6df957cd64e704c095'" "$SNMP" \
+   && grep -qF "hashed_password = '3d78bd442755c509bbfa383c9accb201'" "$SNMP"; then
+  ok "SNMPv3 constants recomputed for the dozenos plaintexts (all 4 expected keys present)"
+else
+  bad "recomputed SNMPv3 constants do not match the expected localized keys"; cat "$SNMP"
 fi
 
 # ---------------------------------------------------------------------------

@@ -21,6 +21,9 @@ overlay-dozenos-1x/
   value-fixes/
     regen-default-password-hash.sh   the overlay's primary job (see below)
     pin-nonmirrored-org-refs.sh      REPOINT-AUDIT.md #6 fix (see below)
+    pin-opam-ocaml-branch.sh         opam pins: #<sha> -> #rolling (see apply-overlay.sh header)
+    strip-motd-logo-frame.sh         remove the VyOS box-drawing MOTD logo frame
+    fix-snmp-test-localized-keys.sh  SNMPv3 smoketest key constants (see below)
 ```
 
 ## The fix: default-login password hash (audit item #8/#23)
@@ -85,6 +88,21 @@ a bot or a human, not fetched by any build tooling), but both are genuine
 dangling links. `value-fixes/pin-nonmirrored-org-refs.sh` reverts both,
 unconditionally (no `--ci`/`--local` split in this overlay at all — these
 are permanent non-mirrored targets, not a temporary pre-push-order gap).
+
+## The SNMPv3 smoketest localized-key constants
+
+Same "value, not string" class as the password hash above, found 2026-07-18
+by the nightly `test-image` gate (test_snmpv3_md5 / test_snmpv3_sha):
+`smoketest/scripts/cli/test_service_snmp.py` asserts the CLI's
+`encrypted-password` values against four hardcoded RFC 3414 localized keys
+derived from the ORIGINAL plaintext passwords (`vyos12345678` /
+`vyos87654321`) plus the test's fixed engine-id. The four-form pass rewrites
+the plaintexts to `dozenos...`, but a localized key contains no `vyos`
+substring, so the constants pass the transform untouched and no longer match
+what snmpd computes. `value-fixes/fix-snmp-test-localized-keys.sh` parses
+the passwords/engine-id out of the file and recomputes all four constants
+(algorithm validated 6/6 against the upstream constants and the failing
+nightly's observed values -- see the script header).
 
 ## What's deliberately NOT here (and why)
 

@@ -40,6 +40,12 @@
 #      the frame graphic (which carries no brand text) intact; this removes
 #      it. See that script's own header for the exact block matched.
 #
+#   5. value-fixes/fix-snmp-test-localized-keys.sh -- recompute the four
+#      SNMPv3 localized-key constants in test_service_snmp.py for the
+#      transformed plaintext passwords (same value-not-string class as
+#      step 1: a localized key carries no `vyos` substring, so the
+#      transform leaves it stale). See that script's own header.
+#
 # (pin-opam-ocaml-branch.sh runs as step 3/4 -- see the NOT-here note below
 # for why it exists.)
 #
@@ -118,16 +124,19 @@ TARGET=$(cd "$TARGET" && pwd)
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 VALUE_FIXES="$SCRIPT_DIR/value-fixes"
 
-echo "== apply-overlay (dozenos-1x): step 1/4 -- value-fixes/regen-default-password-hash.sh =="
+echo "== apply-overlay (dozenos-1x): step 1/5 -- value-fixes/regen-default-password-hash.sh =="
 "$VALUE_FIXES/regen-default-password-hash.sh" "$TARGET"
 
-echo "== apply-overlay (dozenos-1x): step 2/4 -- value-fixes/pin-nonmirrored-org-refs.sh =="
+echo "== apply-overlay (dozenos-1x): step 2/5 -- value-fixes/pin-nonmirrored-org-refs.sh =="
 "$VALUE_FIXES/pin-nonmirrored-org-refs.sh" "$TARGET"
 
-echo "== apply-overlay (dozenos-1x): step 3/4 -- value-fixes/pin-opam-ocaml-branch.sh =="
+echo "== apply-overlay (dozenos-1x): step 3/5 -- value-fixes/pin-opam-ocaml-branch.sh =="
 "$VALUE_FIXES/pin-opam-ocaml-branch.sh" "$TARGET"
 
-echo "== apply-overlay (dozenos-1x): step 4/4 -- value-fixes/strip-motd-logo-frame.sh =="
+echo "== apply-overlay (dozenos-1x): step 4/5 -- value-fixes/strip-motd-logo-frame.sh =="
 "$VALUE_FIXES/strip-motd-logo-frame.sh" "$TARGET"
+
+echo "== apply-overlay (dozenos-1x): step 5/5 -- value-fixes/fix-snmp-test-localized-keys.sh =="
+"$VALUE_FIXES/fix-snmp-test-localized-keys.sh" "$TARGET"
 
 echo "apply-overlay (dozenos-1x): done"
