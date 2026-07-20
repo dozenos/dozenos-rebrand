@@ -209,6 +209,23 @@ EOF
   printf '\x89PNG\r\n\x1a\n' > "$t/data/live-build-config/includes.binary/isolinux/splash.png"
   printf '\x89PNG\r\n\x1a\n' > "$t/data/live-build-config/bootloaders/grub-pc/splash.png"
   printf 'title-text: ""\ndesktop-image: "../splash.png"\n' > "$t/data/live-build-config/bootloaders/grub-pc/live-theme/theme.txt"
+
+  # -- logic-patches/qemu-install-no-grub-nav.sh targets: both
+  #    BOOTLOADERchooseSerialConsole call sites, so the test proves it removes
+  #    the installed-system one and leaves the live/cloud-init one alone --
+  mkdir -p "$t/scripts"
+  cat > "$t/scripts/check-qemu-install" <<'EOF'
+#!/usr/bin/env python3
+def main():
+    BOOTLOADERchooseSerialConsole(c, live=(not args.cloud_init))
+    loginVM(c, log)
+
+    log.info('Booting installed system')
+    BOOTLOADERchooseSerialConsole(c, live=False)
+
+    waitForLogin(c, log)
+EOF
+  chmod +x "$t/scripts/check-qemu-install"
 }
 
 assert_ci_state() {
@@ -314,6 +331,19 @@ assert_both_modes_state() {
     ok "$label: all 3 source-mirror tarball URLs reverted (both modes)"
   else
     bad "$label: only $n/3 source-mirror URLs reverted"
+  fi
+
+  local cqi="$tree/scripts/check-qemu-install"
+  if grep -qF 'BOOTLOADERchooseSerialConsole(c, live=False)' "$cqi"; then
+    bad "$label: installed-system GRUB navigation call NOT removed"
+  elif ! grep -qF "log.info('Booting installed system')" "$cqi"; then
+    bad "$label: removal collaterally dropped the 'Booting installed system' line"
+  elif ! grep -qF 'BOOTLOADERchooseSerialConsole(c, live=(not args.cloud_init))' "$cqi"; then
+    bad "$label: removal collaterally dropped the live/cloud-init call site"
+  elif [ ! -x "$cqi" ]; then
+    bad "$label: check-qemu-install lost its executable bit"
+  else
+    ok "$label: installed-system GRUB navigation removed, live/cloud-init call kept (both modes)"
   fi
 
   if grep -q "if build_config.get('dozenos_mirror')" "$tree/scripts/image-build/build-dozenos-image"; then

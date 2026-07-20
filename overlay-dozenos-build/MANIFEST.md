@@ -394,13 +394,13 @@ item #18d, see below) and 2 docker/ external hosts would 404 in `--local`
 | ~~`gen-throwaway-keys.sh`~~ | **Not implemented, and intentionally not part of this overlay** — per `.powerloop/2026-07-07-cicd.note.md` item #18b notes: "Throwaway GPG/minisign keys are NOT in overlay — CI injects real pubkeys from secrets (item 3)." Confirmed correct: this stays a CI-secret-injection concern, not a file the overlay generates or ships. | #10 (explicitly excluded) |
 | ~~`regen-default-credential.sh`~~ | **Not implemented — out of scope for this repo.** The #23 password-hash fix touches `tools/cloud-init/AWS/config.boot.default` and `tools/container/config.boot.default` (arguably vyos-build-scoped) **plus** 5 locations inside the `vyos-1x`/`dozenos-1x` repo (definitely not vyos-build-scoped). Deferred as a whole to avoid a half-fix that regenerates the hash in 2 places while leaving the other 5 (in a different repo) stale/inconsistent; revisit when `dozenos-1x`'s own overlay is built and coordinate a single hash regenerated consistently everywhere. | #8/#23 (deferred) |
 
-## logic-patches/ — LANDED (2 scripts)
+## logic-patches/ — LANDED (4 scripts)
 
-Both implemented as small, auditable, idempotent, fail-loud shell scripts
+All implemented as small, auditable, idempotent, fail-loud shell scripts
 (not unified diffs) — chosen over `.patch` files because a few-line targeted
 revert/insert is more robust against line-number drift on upstream sync than
 a context diff, while still being just as reviewable. `apply-overlay.sh`
-documents this choice; both scripts follow the same idiom as
+documents this choice; every script follows the same idiom as
 `value-fixes/`'s scripts (explicit whitelist, `grep`-detect
 already-applied-vs-needs-applying-vs-drift, never silently no-op on
 unexpected content).
@@ -409,6 +409,8 @@ unexpected content).
 |---|---|---|---|
 | `revert-source-mirror-urls.sh` | `scripts/package-build/linux-kernel/{build-intel-qat.sh,build-realtek-r8126.py,build-realtek-r8152.py}` | new to this cycle (flagged in `.powerloop` notes, not a numbered audit item) | **Revert to real upstream `packages.vyos.net/source-mirror`** (see decision writeup below) |
 | `vyos-mirror-guard.sh` | `scripts/image-build/build-dozenos-image` (post-rename path) | #13 | **KEEP the guard** (see decision writeup below) |
+| `dockerfile-go-path.sh` | `docker/Dockerfile` | new to this cycle (not a numbered audit item) | **Add `ENV PATH="/opt/go/bin:${PATH}"`** — upstream only exports the Go PATH via `/etc/bash.bashrc`, which non-interactive CI builds never source, so every recipe shelling out to `go` died with "go: not found" |
+| `qemu-install-no-grub-nav.sh` | `scripts/check-qemu-install` | dozenos-nightly-build#1 | **Drop the installed-system `BOOTLOADERchooseSerialConsole` call** (see decision writeup below) |
 
 ### Decision: source-mirror fetch URLs — REVERT to `packages.vyos.net`
 
@@ -456,6 +458,50 @@ the same drift-robustness reason as the source-mirror reverts: it matches
 the exact post-transform text block (verified by simulating the transform
 against pristine upstream) and fails loudly if that block is not found,
 rather than trusting brittle line numbers.
+
+### Decision: installed-system GRUB navigation — DROP the call
+
+`scripts/check-qemu-install` calls
+`BOOTLOADERchooseSerialConsole(c, live=False)` after `install image` finishes,
+blind-sending 7 keystrokes through *Boot options → Select console type → ttyS
+(serial)*. That selects a serial console the installed system is **already**
+configured for: the harness answers `S` to the installer's console prompt,
+`dozenos-1x`'s `image_installer.py` turns that into
+`grub.set_console_type('ttyS', DIR_DST_ROOT)`, and the version menuentry
+(`grub_dozenos_version.j2`) builds `console=ttyS0,<speed>` from that variable
+while `grub_common.j2`'s `setup_serial` puts GRUB itself on serial at
+config-load time. Confirmed empirically in a *passing* leg (testraid, nightly
+run 29721813734): the two post-install `reboot now` cycles take the
+`loginVM()` path, which sends no GRUB keys at all, and both reach the serial
+login normally.
+
+**Decision: delete the call and let the top-level menu's countdown boot the
+default entry.** The navigation is not just redundant, it is the sole source
+of the `test-vpp` flake (dozenos-nightly-build#1). It is open-loop — a fixed
+`time.sleep(1.5)` between keys with no verification of the current menu or
+highlight — so one dropped, duplicated, or mis-parsed key desynchronises
+every key after it with no recovery. In run 29721813734 the final RETURN
+landed while *Boot options* was highlighted, re-entering the submenu tree and
+parking the VM in *Select boot mode*; GRUB `submenu` blocks carry no timeout
+of their own and entering one cancels the top-level countdown, so the VM hung
+until the harness's 600 s `expect('[Ll]ogin:')` expired and declared the ISO
+unusable. Removing the keystrokes removes the whole failure class rather than
+making it rarer.
+
+The other call site,
+`BOOTLOADERchooseSerialConsole(c, live=(not args.cloud_init))`, is
+deliberately untouched, and the script fails loudly if it disappears:
+
+- `live=True` (Live ISO) genuinely needs navigation — the ISO menu defaults to
+  *Live system - KVM console* and the serial entry is two rows down.
+- `live=False` there is the cloud-init path, whose `console_type` comes from
+  the flavor file baked into a pre-assembled image rather than from the
+  installer. It is plausibly redundant too, but that is unverified and those
+  legs (`testc`/`testcvpp`) are green — a separate change if ever.
+
+**Upstreamable**: nothing here is DozenOS-specific, so this is a candidate to
+send to `vyos-build` (their own rolling CI dies the same way). Until then it
+lives as an overlay patch.
 
 ## wire-prebuild-hooks.sh narrowing (item #18a follow-up)
 
