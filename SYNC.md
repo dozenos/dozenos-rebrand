@@ -58,13 +58,15 @@ this toolkit's `dozenos-rebrand/*` scripts exist to prevent. Instead:
   | Overlay repo | `dozenos-1x` | `--overlay dozenos-rebrand/overlay-dozenos-1x --allow-residuals --ensure-pin-tags` |
   | Plain mirror | `vyconf` | *(empty)* |
 
-  ⚠️ **`mirror-flags.conf` is the authoritative, executable copy of this
-  table** (since 2026-07-20); the table above is documentation and must be
-  kept in step with it. `rebake-mirrors.yml` reads that file, so a re-bake
-  *repairs* drifted flags. This matters because a mirror's flags are baked
-  into its own `sync.yml` and its self-sync re-bakes whatever it already
-  had — **a mirror can never gain, lose, or repair a flag through
-  self-sync**. A re-push that drops a target's overlay flag ships an
+  ⚠️ **This table is the authoritative flag list for ANY re-push/rollout of
+  a mirror**, and the only place it is written down — a mirror's flags are
+  baked into its own generated `sync.yml`, and its self-sync re-bakes
+  whatever it already had, so **a mirror can never gain, lose, or repair a
+  flag through self-sync** (scheduled or dispatched). Changing a flag set is
+  always a deliberate manual re-push with the flags stated explicitly; that
+  is how `--ensure-pin-tags` reached `dozenos-1x` on 2026-07-20, and
+  `rebake-mirrors.yml` deliberately does not do it. A re-push that drops a
+  target's overlay flag ships an
   un-overlaid tree AND bakes overlay-less flags into that mirror's own
   sync.yml, so every subsequent self-sync keeps stomping the overlay's
   fixes. This actually happened (2026-07-09): `vyconf` was rolled out and
