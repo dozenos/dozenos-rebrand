@@ -46,7 +46,7 @@
 #      step 1: a localized key carries no `vyos` substring, so the
 #      transform leaves it stale). See that script's own header.
 #
-# (pin-opam-ocaml-branch.sh runs as step 3/4 -- see the NOT-here note below
+# (pin-opam-upstream-tag.sh runs as step 3/5 -- see the NOT-here note below
 # for why it exists.)
 #
 # What is deliberately NOT here (verified against a fresh upstream clone --
@@ -66,9 +66,14 @@
 #     is the original upstream vyos1x-config/vyconf commit -- which does NOT
 #     exist in the mode-B snapshot mirrors (each carries a fresh single
 #     commit). opam then dies "Commit not found on repository". That IS
-#     handled here, by step 3/3 (value-fixes/pin-opam-ocaml-branch.sh), which
-#     re-pins both to `#rolling` (the mirror's tracking branch). This was the
+#     handled here, by step 3/5 (value-fixes/pin-opam-upstream-tag.sh), which
+#     re-pins both to `#upstream-<sha>` -- the tag mirror-push.sh --pin-commit
+#     puts on the mirror for exactly that upstream commit. This was the
 #     dozenos-1x package-build failure caught by the first full CI run.
+#     (It re-pinned to `#rolling` until 2026-07-20; that tracked the mirror's
+#     branch tip instead of the commit upstream builds, which made the build
+#     unreproducible and dragged in vyconf's broken ocaml-protoc pin. See that
+#     script's header.)
 #
 #   - `open Vyos1x` in libdozenosconfig/lib/bindings.ml (the OCaml ctypes
 #     bindings) -- already handled by the four-form pass. Confirmed
@@ -130,8 +135,8 @@ echo "== apply-overlay (dozenos-1x): step 1/5 -- value-fixes/regen-default-passw
 echo "== apply-overlay (dozenos-1x): step 2/5 -- value-fixes/pin-nonmirrored-org-refs.sh =="
 "$VALUE_FIXES/pin-nonmirrored-org-refs.sh" "$TARGET"
 
-echo "== apply-overlay (dozenos-1x): step 3/5 -- value-fixes/pin-opam-ocaml-branch.sh =="
-"$VALUE_FIXES/pin-opam-ocaml-branch.sh" "$TARGET"
+echo "== apply-overlay (dozenos-1x): step 3/5 -- value-fixes/pin-opam-upstream-tag.sh =="
+"$VALUE_FIXES/pin-opam-upstream-tag.sh" "$TARGET"
 
 echo "== apply-overlay (dozenos-1x): step 4/5 -- value-fixes/strip-motd-logo-frame.sh =="
 "$VALUE_FIXES/strip-motd-logo-frame.sh" "$TARGET"

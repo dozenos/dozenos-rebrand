@@ -55,8 +55,8 @@ this toolkit's `dozenos-rebrand/*` scripts exist to prevent. Instead:
   |---|---|---|
   | Plain mirror | `hvinfo` | *(empty)* |
   | Build repo | `dozenos-build` | `--build-repo` |
-  | Overlay repo | `dozenos-1x` | `--overlay dozenos-rebrand/overlay-dozenos-1x --allow-residuals` |
-  | Overlay repo | `vyconf` | `--overlay dozenos-rebrand/overlay-vyconf` |
+  | Overlay repo | `dozenos-1x` | `--overlay dozenos-rebrand/overlay-dozenos-1x --allow-residuals --ensure-pin-tags` |
+  | Plain mirror | `vyconf` | *(empty)* |
 
   ⚠️ **This table is the authoritative flag list for ANY re-push/rollout of
   a mirror** — a re-push that drops a target's overlay flag ships an
@@ -65,8 +65,14 @@ this toolkit's `dozenos-rebrand/*` scripts exist to prevent. Instead:
   fixes. This actually happened (2026-07-09): `vyconf` was rolled out and
   later re-pushed as a plain mirror, so its daily self-sync reverted
   `overlay-vyconf`'s ocaml-protoc `>= 3.0` pin fix back to upstream's
-  broken `< 3.0`, failing every dozenos-1x build until re-pushed WITH
-  `--overlay dozenos-rebrand/overlay-vyconf`.
+  broken `< 3.0`, failing every dozenos-1x build.
+
+  `vyconf` is a **plain mirror again since 2026-07-20**, and this time that
+  is correct rather than a regression: `overlay-vyconf` is gone. We no
+  longer build vyconf's branch tip at all — `dozenos-1x` now pins the exact
+  upstream commit upstream itself pins, fetched into the mirror as an
+  `upstream-<sha>` tag by `--ensure-pin-tags`, and that commit predates the
+  broken `< 3.0` pin entirely. See "Pin snapshots" below.
 
   `--build-repo` already implies `--allow-residuals` inside `mirror-push.sh`
   (see its existing comment on that), so a build-repo target's baked flags
@@ -251,6 +257,62 @@ specifically to keep `sync.yml.template`'s rendered output byte-stable
 across every plain mirror (§3) — introducing target-specific scheduling
 would mean re-baking the target name as literal text, which this design
 deliberately avoids.
+
+## 6b. Pin snapshots (`--pin-commit` / `--ensure-pin-tags`)
+
+Most mirrors track a branch. The two OCaml config libs do **not**: upstream
+`vyos-1x`'s `libvyosconfig/Makefile` opam-pins them to fixed upstream
+commits.
+
+```
+opam pin add vyos1x-config https://github.com/vyos/vyos1x-config.git#<sha> -y
+opam pin add vyconf        https://github.com/vyos/vyconf.git#<sha> -y
+```
+
+`rename-transform.sh` rewrites the package name and URL host but never the
+`#<sha>` fragment — and that sha is an *upstream* commit, which by
+construction does not exist in a mode-B snapshot mirror. opam then dies with
+`Commit not found on repository`.
+
+Until 2026-07-20 the overlay papered over this by re-pinning both to
+`#rolling`. That worked but cost two things worth more than it saved:
+
+- **Reproducibility.** `#rolling` resolves to the mirror's branch tip, so the
+  same `dozenos-1x` source could link a different `vyconf` on different days.
+- **Divergence.** We built lib commits upstream never builds. One of them,
+  vyconf `0d61bd7` (T9044, 2026-07-02), constrains `ocaml-protoc` to `< 3.0`
+  while the committed `src/vyconf_pbt.ml` already uses the 3.x `pbrt` API, so
+  `dune build -p vyconf` cannot compile. `overlay-vyconf/` existed solely to
+  patch that back out. Upstream never hits it because it pins vyconf at
+  `e25b13ae` (2026-03-04), whose `vyconf.opam` has no `ocaml-protoc`
+  constraint at all.
+
+The current model builds **the same commit upstream builds**:
+
+1. `mirror-push.sh --pin-commit <sha>` fetches that exact upstream commit
+   (shallow, by sha), runs the normal transform/strip/verify pipeline, and
+   publishes the tree on the existing mirror as the tag `upstream-<full-sha>`.
+   It never touches a branch and never generates a `sync.yml` — a frozen pin
+   snapshot must not self-sync off the commit it exists to pin.
+2. `overlay-dozenos-1x/value-fixes/pin-opam-upstream-tag.sh` rewrites each pin
+   `#<sha>` → `#upstream-<sha>`.
+3. `ensure-pin-tags.sh` reads the `<url>.git#<sha>` pairs straight out of the
+   upstream Makefile and calls (1) for each, so no upstream URL is hardcoded.
+
+**There is no change detection anywhere in this.** The overlay rewrite is a
+pure text derivation — no lookup table, no recorded "last seen sha". Step (1)
+is idempotent (`git ls-remote` finds the tag → exit 0 without pushing), so
+`--ensure-pin-tags` runs unconditionally on every `dozenos-1x` sync: an
+unmoved pin costs one remote ref query, a moved pin creates the new tag with
+no bookkeeping, and a run that was skipped or failed self-heals on the next
+one. This is also why the tag carries the **full 40-char sha** — `git
+rev-parse --short` lengthens abbreviations as an object store grows, and a
+tag name that drifts would silently break the text rewrite.
+
+**Ordering is load-bearing.** `--ensure-pin-tags` runs as step 6b inside
+`mirror-push.sh`, *before* the `dozenos-1x` push, and fails closed. Landing a
+Makefile that names a tag which does not exist yet breaks every
+`libdozenosconfig` build in the window before the tag appears.
 
 ## 7. Value-not-string blind spots re-apply automatically
 

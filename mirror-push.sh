@@ -24,6 +24,15 @@
 #                overwrite its whole tree (propagating upstream deletions),
 #                ONE snapshot commit, git push (fast-forward, no --force)
 #
+# --pin-commit <sha> replaces the branch clone with a fetch of that exact
+# upstream commit and publishes the transformed tree as the tag
+# `upstream-<full-sha>` on an already-seeded mirror, never touching a branch
+# and never generating a sync.yml. That is how the OCaml config libs
+# (vyconf, vyos1x-config) get into our mirrors at the SAME commit upstream
+# pins them to, so dozenos-1x builds reproducibly against the code upstream
+# actually builds -- see ensure-pin-tags.sh and
+# overlay-dozenos-1x/value-fixes/pin-opam-upstream-tag.sh.
+#
 # Commit messages are SHA-only and contain ZERO "vyos" token, including the
 # body -- the dozenos<->upstream URL mapping is the only vyos residual, and
 # it lives in the CALLER's argument / UPSTREAM_URL mapping, never in this
@@ -34,6 +43,7 @@
 #
 # Usage:
 #   mirror-push.sh <upstream-url> --target <name> [--branch <name>]
+#                  [--pin-commit <sha>] [--ensure-pin-tags]
 #                  [--build-repo] [--overlay <dir>] [--allow-residuals]
 #                  [--dry-run] [--work <dir>]
 #
@@ -71,6 +81,16 @@ Usage: mirror-push.sh <upstream-url> --target <name> [options]
   <upstream-url>       upstream git URL to mirror (required, never hardcoded)
   --target <name>      dozenos repo name (required)
   --branch <name>      branch to mirror/push (default: rolling)
+  --pin-commit <sha>   PIN-SNAPSHOT mode: snapshot the given UPSTREAM commit
+                        (not the branch tip) and publish it on the existing
+                        mirror as the tag `upstream-<full-sha>`, leaving
+                        --branch untouched. For build inputs that upstream
+                        itself pins to a fixed commit (vyos-1x's opam pins
+                        for vyconf / vyos1x-config) so we build the same
+                        code upstream builds. No sync.yml is generated (a
+                        frozen pin snapshot must never self-sync) and the
+                        mirror must already exist. Idempotent: a tag that is
+                        already present is a no-op.
   --build-repo         this is the dozenos-build mirror: also run
                         apply-overlay.sh, and allow
                         the whitelisted build-time-pointer residuals.
@@ -78,6 +98,15 @@ Usage: mirror-push.sh <upstream-url> --target <name> [options]
                         deliberate residual set is unavoidable for this
                         target; no need to also pass --allow-residuals)
   --overlay <dir>      apply an additional per-repo overlay directory
+  --ensure-pin-tags    before pushing, run ensure-pin-tags.sh against this
+                        mirror's upstream so every `<url>.git#<sha>` opam pin
+                        it declares exists in our mirrors as an
+                        `upstream-<sha>` tag. For dozenos-1x, whose
+                        libdozenosconfig/Makefile pins the OCaml config libs.
+                        Runs BEFORE the push on purpose: landing a Makefile
+                        that names a tag which does not exist yet breaks every
+                        build until the tag appears. Idempotent (no-op when
+                        the tags are already there)
   --allow-residuals    do not fail on --verify residuals (print & continue).
                         Always implied by --build-repo; still required
                         (and must be passed explicitly) for any mirror run
@@ -100,6 +129,8 @@ shift
 
 TARGET=""
 BRANCH="rolling"
+PIN_COMMIT=""
+ENSURE_PIN_TAGS=0
 BUILD_REPO=0
 OVERLAY_DIR=""
 ALLOW_RESIDUALS=0
@@ -110,6 +141,8 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --target)          TARGET="${2:-}"; shift 2 ;;
     --branch)          BRANCH="${2:-}"; shift 2 ;;
+    --pin-commit)      PIN_COMMIT="${2:-}"; shift 2 ;;
+    --ensure-pin-tags) ENSURE_PIN_TAGS=1; shift ;;
     --build-repo)       BUILD_REPO=1; shift ;;
     --overlay)          OVERLAY_DIR="${2:-}"; shift 2 ;;
     --allow-residuals)  ALLOW_RESIDUALS=1; shift ;;
@@ -155,6 +188,21 @@ fi
 case "$TARGET" in
   */*|"") die "invalid --target: '$TARGET'" ;;
 esac
+
+# --pin-commit publishes a FROZEN snapshot as a tag on an already-seeded
+# mirror. It is deliberately incompatible with --build-repo (dozenos-build is
+# never an opam pin target, and its recipes-changed dispatch routing is
+# meaningless for a tag) and requires a full-length or abbreviated hex sha --
+# a branch/tag name here would silently reintroduce the moving-target problem
+# this mode exists to remove.
+if [ -n "$PIN_COMMIT" ]; then
+  case "$PIN_COMMIT" in
+    *[!0-9a-fA-F]*|"") die "--pin-commit must be a hex commit sha, got: '$PIN_COMMIT'" ;;
+  esac
+  [ "${#PIN_COMMIT}" -ge 7 ] || die "--pin-commit sha too short (need >= 7 hex chars): '$PIN_COMMIT'"
+  [ "$BUILD_REPO" -eq 0 ] || die "--pin-commit cannot be combined with --build-repo"
+  [ "$ENSURE_PIN_TAGS" -eq 0 ] || die "--pin-commit cannot be combined with --ensure-pin-tags (a pin snapshot declares no pins of its own)"
+fi
 if [ -n "$OVERLAY_DIR" ]; then
   [ -d "$OVERLAY_DIR" ] || die "--overlay dir not found: $OVERLAY_DIR"
 fi
@@ -238,6 +286,9 @@ generate_sync_workflow() {
   if [ "$BUILD_REPO" -ne 1 ] && [ "$ALLOW_RESIDUALS" -eq 1 ]; then
     flags="${flags:+$flags }--allow-residuals"
   fi
+  if [ "$ENSURE_PIN_TAGS" -eq 1 ]; then
+    flags="${flags:+$flags }--ensure-pin-tags"
+  fi
 
   if [ -n "$flags" ]; then
     flags_display="$flags"
@@ -271,10 +322,24 @@ log "target=dozenos/$TARGET branch=$BRANCH build-repo=$BUILD_REPO dry-run=$DRY_R
 #    upstream history is needed, only the tip commit's short SHA for the
 #    (zero-vyos, SHA-only) commit message.
 # ------------------------------------------------------------------------- #
-log "1/7 cloning upstream @ $BRANCH ..."
-git clone --quiet --depth 1 --branch "$BRANCH" --single-branch \
-  "$UPSTREAM_URL" "$CLONE_DIR" \
-  || die "clone failed: $UPSTREAM_URL (branch $BRANCH)"
+if [ -n "$PIN_COMMIT" ]; then
+  # A specific commit cannot be reached by `clone --branch`; fetch it by sha.
+  # Still --depth 1 -- only the tree at that commit is ever shipped. GitHub
+  # serves reachable shas to fetch-by-sha, so no full clone is needed.
+  log "1/7 fetching upstream @ $PIN_COMMIT (pin-snapshot) ..."
+  mkdir -p "$CLONE_DIR"
+  git -C "$CLONE_DIR" init --quiet
+  git -C "$CLONE_DIR" remote add origin "$UPSTREAM_URL"
+  git -C "$CLONE_DIR" fetch --quiet --depth 1 origin "$PIN_COMMIT" \
+    || die "fetch failed: $UPSTREAM_URL @ $PIN_COMMIT (is the sha reachable on that remote?)"
+  git -C "$CLONE_DIR" checkout --quiet FETCH_HEAD \
+    || die "checkout failed: $PIN_COMMIT"
+else
+  log "1/7 cloning upstream @ $BRANCH ..."
+  git clone --quiet --depth 1 --branch "$BRANCH" --single-branch \
+    "$UPSTREAM_URL" "$CLONE_DIR" \
+    || die "clone failed: $UPSTREAM_URL (branch $BRANCH)"
+fi
 UPSTREAM_SHA=$(git -C "$CLONE_DIR" rev-parse --short HEAD)
 log "upstream short SHA: $UPSTREAM_SHA"
 
@@ -357,8 +422,15 @@ fi
 #    the standard 0-residual-vyos check also covers this generated file. See
 #    SYNC.md for the full design.
 # ------------------------------------------------------------------------- #
-log "5/7 generating .github/workflows/sync.yml ..."
-generate_sync_workflow "$CLONE_DIR"
+if [ -n "$PIN_COMMIT" ]; then
+  # A pin snapshot is a frozen build input, not a living mirror: giving it a
+  # self-sync workflow would let it advance off the very commit it exists to
+  # pin. Ship it without one.
+  log "5/7 pin-snapshot: skipping sync.yml generation (frozen tag, never self-syncs)"
+else
+  log "5/7 generating .github/workflows/sync.yml ..."
+  generate_sync_workflow "$CLONE_DIR"
+fi
 
 # NOTICE: repo-level provenance/attribution statement (LEGAL, 2026-07-11).
 # Byte-stable and zero-vyos (upstream is identified by the per-file
@@ -455,6 +527,26 @@ else
 fi
 
 # ------------------------------------------------------------------------- #
+# 6b) --ensure-pin-tags: create any missing `upstream-<sha>` pin tags on the
+#     sibling mirrors BEFORE this mirror's own push. Ordering is the whole
+#     point: overlay-dozenos-1x/value-fixes/pin-opam-upstream-tag.sh has
+#     already rewritten this tree's opam pins to name those tags, so pushing
+#     first would publish a Makefile pointing at tags that do not exist yet
+#     and break every libdozenosconfig build until they do. Idempotent, and
+#     fails closed -- a pin tag that cannot be created aborts the push.
+# ------------------------------------------------------------------------- #
+if [ "$ENSURE_PIN_TAGS" -eq 1 ]; then
+  ENSURE_PIN_TAGS_SH="$SCRIPT_DIR/ensure-pin-tags.sh"
+  [ -x "$ENSURE_PIN_TAGS_SH" ] || die "missing dependency: $ENSURE_PIN_TAGS_SH"
+  log "6b/7 --ensure-pin-tags: ensuring upstream-<sha> pin tags exist ..."
+  if [ "$DRY_RUN" -eq 1 ]; then
+    "$ENSURE_PIN_TAGS_SH" "$UPSTREAM_URL" --dry-run
+  else
+    "$ENSURE_PIN_TAGS_SH" "$UPSTREAM_URL"
+  fi
+fi
+
+# ------------------------------------------------------------------------- #
 # 7) Mode detect + push.
 # ------------------------------------------------------------------------- #
 detect_mode() {
@@ -484,6 +576,57 @@ SUBJECT="sync: rename-transform snapshot (upstream @${UPSTREAM_SHA})"
 BODY="DozenOS mirror -- idempotent rename-transform applied (vyatta preserved), upstream .github/ stripped. Upstream commit: ${UPSTREAM_SHA}"
 AUTHOR_NAME="DozenOS autobuild"
 AUTHOR_EMAIL="autobuild@dozenos.local"
+
+# --- pin-snapshot: publish the frozen tree as a tag, never touching a branch.
+#     Split out ahead of detect_mode because seed/sync semantics do not apply:
+#     the mirror must already exist, and an existing tag is a no-op rather
+#     than something to fast-forward.
+if [ -n "$PIN_COMMIT" ]; then
+  # FULL 40-char sha, deliberately not the abbreviated UPSTREAM_SHA used in
+  # commit subjects: the overlay derives this tag name from the sha literal in
+  # dozenos-1x's Makefile by pure text rewrite, and `git rev-parse --short`
+  # lengthens abbreviations as the object count grows -- a moving tag name
+  # would silently break that rewrite years from now.
+  PIN_FULL_SHA=$(git -C "$CLONE_DIR" rev-parse HEAD)
+  PIN_TAG="upstream-${PIN_FULL_SHA}"
+  SUBJECT="pin: rename-transform snapshot (upstream @${UPSTREAM_SHA})"
+  BODY="DozenOS pin snapshot -- frozen build input for the opam pin dozenos-1x carries. Idempotent rename-transform applied (vyatta preserved), upstream .github/ stripped, no sync workflow. Upstream commit: ${UPSTREAM_SHA}"
+
+  log "7/7 pin-snapshot -> tag $PIN_TAG on dozenos/$TARGET ..."
+  gh repo view "dozenos/$TARGET" >/dev/null 2>&1 \
+    || die "dozenos/$TARGET does not exist -- seed it with a normal branch sync before adding pin snapshots"
+
+  if git ls-remote --exit-code --tags "https://github.com/dozenos/$TARGET.git" \
+       "refs/tags/$PIN_TAG" >/dev/null 2>&1; then
+    log "tag $PIN_TAG already present on dozenos/$TARGET -- nothing to do (idempotent no-op)"
+    exit 0
+  fi
+
+  if [ "$DRY_RUN" -eq 1 ]; then
+    echo "[dry-run] mode: pin"
+    echo "[dry-run] commit subject: $SUBJECT"
+    echo "[dry-run] would run: git init && git add -A -f && git commit (author: $AUTHOR_NAME <$AUTHOR_EMAIL>)"
+    echo "[dry-run] would run: git tag $PIN_TAG"
+    echo "[dry-run] would run: git push origin refs/tags/$PIN_TAG   # tag only, branch untouched"
+    log "dry-run complete -- nothing pushed, no repo created/touched"
+    exit 0
+  fi
+
+  rm -rf "$CLONE_DIR/.git"
+  git -C "$CLONE_DIR" init --quiet -b "$BRANCH"
+  # -f (force): same reason as the seed/sync paths -- ship upstream's tracked
+  # set exactly, never let .gitignore drop tracked-but-ignored sources.
+  git -C "$CLONE_DIR" add -A -f
+  git -C "$CLONE_DIR" -c user.name="$AUTHOR_NAME" -c user.email="$AUTHOR_EMAIL" \
+    commit --quiet --author="$AUTHOR_NAME <$AUTHOR_EMAIL>" -m "$SUBJECT" -m "$BODY"
+  git -C "$CLONE_DIR" tag "$PIN_TAG"
+  git -C "$CLONE_DIR" remote add origin "https://github.com/dozenos/$TARGET.git" 2>/dev/null \
+    || git -C "$CLONE_DIR" remote set-url origin "https://github.com/dozenos/$TARGET.git"
+  # Tag ref only: the branch this mirror tracks is never written by pin mode.
+  git -C "$CLONE_DIR" push origin "refs/tags/$PIN_TAG"
+  log "pin push complete: dozenos/$TARGET @ tag $PIN_TAG (upstream $UPSTREAM_SHA)"
+  exit 0
+fi
 
 log "7/7 mode detect ..."
 MODE=$(detect_mode)

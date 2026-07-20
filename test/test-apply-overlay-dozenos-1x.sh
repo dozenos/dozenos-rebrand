@@ -138,9 +138,10 @@ EOF
   printf '# https://github.com/dozenos/coderabbit/blob/production/.coderabbit.yaml\ninheritance: true\n' > "$t/.coderabbit.yaml"
 
   # libdozenosconfig/Makefile with opam pins to a specific (fake) upstream sha
-  # -- pin-opam-ocaml-branch.sh must re-pin both to #rolling (the sha does not
-  # exist in the snapshot mirror). Names/hosts are already in dozenos form (as
-  # rename-transform would leave them); only the #<sha> fragment is the fix.
+  # -- pin-opam-upstream-tag.sh must re-pin both to #upstream-<that same sha>
+  # (the bare sha does not exist in the snapshot mirror; the tag does, created
+  # by mirror-push.sh --pin-commit). Names/hosts are already in dozenos form
+  # (as rename-transform would leave them); only the #<sha> fragment is fixed.
   mkdir -p "$t/libdozenosconfig"
   cat > "$t/libdozenosconfig/Makefile" <<'EOF'
 PACKAGES=dozenos1x-config,vyconf.vyconfd-config
@@ -265,14 +266,17 @@ else
   bad ".coderabbit.yaml ref not reverted"; cat "$TREE/.coderabbit.yaml"
 fi
 
-# 7. pin-opam-ocaml-branch.sh: opam pins re-pinned from the (fake) upstream
-#    sha to the #rolling branch (the sha does not exist in the snapshot mirror).
-if grep -qF 'dozenos1x-config.git#rolling' "$TREE/libdozenosconfig/Makefile" \
-   && grep -qF 'vyconf.git#rolling' "$TREE/libdozenosconfig/Makefile" \
-   && ! grep -qE '\.git#[0-9a-f]{7,40}' "$TREE/libdozenosconfig/Makefile"; then
-  ok "opam pins re-pinned to #rolling (no leftover #<sha>)"
+# 7. pin-opam-upstream-tag.sh: opam pins re-pinned from the bare (fake)
+#    upstream sha to the mirror tag named after that SAME sha -- the rewrite is
+#    a pure text derivation, so the sha must be carried through verbatim, not
+#    replaced by a branch or a looked-up mirror sha.
+PINMK="$TREE/libdozenosconfig/Makefile"
+if grep -qF 'dozenos1x-config.git#upstream-0123456789abcdef0123456789abcdef01234567' "$PINMK" \
+   && grep -qF 'vyconf.git#upstream-89abcdef0123456789abcdef0123456789abcdef' "$PINMK" \
+   && ! grep -qE '\.git#[0-9a-f]{7,40}' "$PINMK"; then
+  ok "opam pins re-pinned to #upstream-<same sha> (no leftover bare #<sha>)"
 else
-  bad "opam pins not re-pinned to #rolling"; cat "$TREE/libdozenosconfig/Makefile"
+  bad "opam pins not re-pinned to #upstream-<sha>"; cat "$PINMK"
 fi
 
 # 8. strip-motd-logo-frame.sh: framed block collapsed to the frameless line,
