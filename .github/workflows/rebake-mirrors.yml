@@ -1,0 +1,181 @@
+# Re-bake every dozenos/* mirror when this toolkit changes.
+#
+# A mirror's content is a FUNCTION of (upstream tree, this toolkit). Each
+# mirror's own sync.yml checks out dozenos-rebrand@main at run time, so a
+# toolkit change does propagate on its own -- but only on that mirror's daily
+# cron, staggered across the fleet, up to ~24h late. This workflow closes the
+# window: a toolkit change re-bakes the fleet immediately and deterministically.
+#
+# It invokes mirror-push.sh DIRECTLY rather than dispatching each mirror's
+# sync.yml, because the flags are the point. A mirror's flags live baked in its
+# own sync.yml and its self-sync re-bakes whatever it already had, so a
+# self-sync can never add or repair a flag (see mirror-flags.conf's header for
+# the outage this caused). Driving mirror-push.sh from the checked-in table
+# means a rebake REPAIRS flag drift.
+#
+# Fan-out is safe downstream: dozenos-nightly-build's change-gate snapshots all
+# mirror HEADs and compares the set, so a whole-fleet re-bake collapses into ONE
+# image build, not one per mirror.
+name: Re-bake mirrors
+
+on:
+  push:
+    branches: [main]
+    paths:
+      # Toolkit files whose content lands IN the mirrors. Deliberately NOT
+      # release/**, flavors/**, dep-graph/**, keys/** or *.md: the nightly
+      # checks those out itself, they never enter a mirror tree, and a docs
+      # commit must not re-bake 20 repos.
+      - 'rename-transform.sh'
+      - 'rebrand-map.conf'
+      - 'mirror-push.sh'
+      - 'ensure-pin-tags.sh'
+      - 'sync.yml.template'
+      - 'mirror-flags.conf'
+      - 'overlay-dozenos-build/**'
+      - 'overlay-dozenos-1x/**'
+      - '.github/workflows/rebake-mirrors.yml'
+  workflow_dispatch:
+    inputs:
+      only:
+        description: 'Re-bake only this mirror (repo name). Blank = the whole fleet.'
+        required: false
+        type: string
+      dry_run:
+        description: 'Run the full pipeline but push nothing.'
+        required: false
+        type: boolean
+        default: false
+
+# One re-bake at a time: two concurrent fleet passes would race on the same
+# mirror branches. Never cancel one in flight -- a half-baked fleet is worse
+# than a late one.
+concurrency:
+  group: dozenos-rebake-mirrors
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    outputs:
+      mirrors: ${{ steps.list.outputs.mirrors }}
+    steps:
+      - name: Mint GitHub App token (org-wide mirror enumeration)
+        id: app_token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.BUILD_APP_ID }}
+          private-key: ${{ secrets.BUILD_APP_PRIVATE_KEY }}
+          owner: dozenos
+
+      - name: Enumerate mirrors
+        id: list
+        env:
+          GH_TOKEN: ${{ steps.app_token.outputs.token }}
+          ONLY: ${{ inputs.only }}
+        run: |
+          set -euo pipefail
+          # A dozenos/* repo with a `rolling` branch IS a mirror -- enumerating
+          # by branch auto-covers mirrors added or removed later, with no
+          # hand-kept list. Same rule dozenos-nightly-build's change-gate uses.
+          # dozenos-nightly-build itself is not a mirror (it has no upstream).
+          mirrors=()
+          while read -r r; do
+            [ -n "$r" ] || continue
+            [ "$r" = "dozenos-nightly-build" ] && continue
+            if gh api "repos/dozenos/$r/commits/rolling" --jq '.sha' >/dev/null 2>&1; then
+              mirrors+=("$r")
+            fi
+          done < <(gh api --paginate orgs/dozenos/repos --jq '.[].name' | sort -u)
+
+          if [ -n "${ONLY:-}" ]; then
+            found=0
+            for m in "${mirrors[@]}"; do [ "$m" = "$ONLY" ] && found=1; done
+            [ "$found" -eq 1 ] || { echo "::error::--only '$ONLY' is not a mirror (no rolling branch)" >&2; exit 1; }
+            mirrors=("$ONLY")
+          fi
+
+          [ "${#mirrors[@]}" -gt 0 ] || { echo "::error::no mirrors found" >&2; exit 1; }
+          printf 're-baking %d mirror(s): %s\n' "${#mirrors[@]}" "${mirrors[*]}"
+          printf 'mirrors=%s\n' "$(printf '%s\n' "${mirrors[@]}" | jq -R . | jq -cs .)" >> "$GITHUB_OUTPUT"
+
+  rebake:
+    needs: discover
+    runs-on: ubuntu-latest
+    strategy:
+      # Never cancel siblings: a mirror that fails to bake must not abort the
+      # ones still in flight, or the fleet is left half-consistent with no
+      # record of which half.
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        mirror: ${{ fromJSON(needs.discover.outputs.mirrors) }}
+    steps:
+      - name: Checkout dozenos-rebrand
+        uses: actions/checkout@v7
+        with:
+          path: dozenos-rebrand
+
+      # Scoped to the mirror being baked plus the two pin-tag targets, which
+      # --ensure-pin-tags writes tags to while baking dozenos-1x.
+      - name: Mint GitHub App token (push)
+        id: app_token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.BUILD_APP_ID }}
+          private-key: ${{ secrets.BUILD_APP_PRIVATE_KEY }}
+          owner: dozenos
+          repositories: |
+            ${{ matrix.mirror }}
+            vyconf
+            dozenos1x-config
+
+      - name: Read this mirror's upstream URL
+        id: upstream
+        env:
+          GH_TOKEN: ${{ steps.app_token.outputs.token }}
+        run: |
+          set -euo pipefail
+          # UPSTREAM_URL is a per-repo Actions variable, never hardcoded in
+          # this toolkit (SYNC.md section 5).
+          url=$(gh api "repos/dozenos/${{ matrix.mirror }}/actions/variables/UPSTREAM_URL" --jq '.value' 2>/dev/null || true)
+          if [ -z "$url" ]; then
+            echo "::error::dozenos/${{ matrix.mirror }} has no UPSTREAM_URL variable -- see dozenos-rebrand/CI-SECRETS.md" >&2
+            exit 1
+          fi
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+
+      - name: Re-bake
+        env:
+          GH_TOKEN: ${{ steps.app_token.outputs.token }}
+          UPSTREAM_URL: ${{ steps.upstream.outputs.url }}
+          MIRROR: ${{ matrix.mirror }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          # Let mirror-push.sh's own plain git clone/push authenticate as the
+          # App token, the same way each mirror's sync.yml does.
+          git config --global credential.helper store
+          printf 'https://x-access-token:%s@github.com\n' "$GH_TOKEN" > "$HOME/.git-credentials"
+
+          # Authoritative flags for this target; absent = plain mirror.
+          FLAGS=$(awk -v m="$MIRROR" '
+            /^[[:space:]]*#/ || /^[[:space:]]*$/ { next }
+            { name=$1; $1=""; sub(/^[[:space:]]+/, ""); if (name == m) { print; exit } }
+          ' dozenos-rebrand/mirror-flags.conf)
+          if [ -n "$FLAGS" ]; then
+            echo "flags for $MIRROR: $FLAGS"
+          else
+            echo "flags for $MIRROR: (none -- plain mirror)"
+          fi
+
+          extra=""
+          [ "$DRY_RUN" = "true" ] && extra="--dry-run"
+
+          # shellcheck disable=SC2086
+          dozenos-rebrand/mirror-push.sh "$UPSTREAM_URL" \
+            --target "$MIRROR" \
+            --branch rolling $FLAGS $extra
