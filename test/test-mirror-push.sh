@@ -665,6 +665,68 @@ cat > "$UPSTREAM6/smoketest/configs/assert/firewall-groups-name" <<EOF
 set system login user vyos authentication encrypted-password '$OLD_HASH'
 EOF
 
+# Every overlay value-fix is fail-closed: each dies if its target file is
+# missing, so the fixture must carry upstream's real pre-transform content for
+# all of them or the run dies before reaching the later steps.
+mkdir -p "$UPSTREAM6"/smoketest/scripts/cli "$UPSTREAM6"/data/templates/login
+
+cat > "$UPSTREAM6/data/templates/login/default_motd.j2" <<'EOF'
+Welcome to VyOS!
+
+   ┌── ┐
+   . VyOS {{ version_data.version }}
+   └ ──┘  {{ version_data.release_train }}
+
+ * Documentation:  {{ version_data.documentation_url }}
+EOF
+
+cat > "$UPSTREAM6/smoketest/scripts/cli/test_service_snmp.py" <<'EOF'
+snmpv3_user = 'vyos'
+snmpv3_auth_pw = 'vyos12345678'
+snmpv3_priv_pw = 'vyos87654321'
+snmpv3_engine_id = '000000000000000000000002'
+
+class TestSNMPService:
+    def test_snmpv3_sha(self):
+        hashed_password = '4e52fe55fd011c9c51ae2c65f4b78ca93dcafdfe'
+        hashed_password = '54705c8de9e81fdf61ad7ac044fa8fe611ddff6b'
+
+    def test_snmpv3_md5(self):
+        hashed_password = '4c67690d45d3dfcd33d0d7e308e370ad'
+        hashed_password = 'e11c83f2c510540a3c4de84ee66de440'
+EOF
+
+cat > "$UPSTREAM6/smoketest/scripts/cli/test_protocols_nhrp.py" <<'EOF'
+class TestProtocolsNHRP:
+    def test_01_nhrp_config(self):
+        nhrp_secret = "vyos123"
+EOF
+
+cat > "$UPSTREAM6/smoketest/scripts/cli/test_vpn_ipsec.py" <<'EOF'
+class TestVPNIPsec:
+    def test_dmvpn(self):
+        nhrp_secret = "vyos123"
+        password = 'secret'
+EOF
+
+cat > "$UPSTREAM6/smoketest/scripts/cli/test_protocols_ospf.py" <<'EOF'
+class TestProtocolsOSPF:
+    def test_ospf_09_interface_configuration(self):
+        password = 'vyos1234'
+
+    def test_ospf_19_authentication(self):
+        plaintext_key = 'vyos123'
+EOF
+
+cat > "$UPSTREAM6/smoketest/scripts/cli/test_service_dns_dynamic.py" <<'EOF'
+password = 'paSS_@4ord'
+
+class TestServiceDDNS:
+    def test_08_dyndns_vrf(self):
+        vrf_table = '58710'
+        vrf_name = f'vyos-test-{vrf_table}'
+EOF
+
 git -C "$UPSTREAM6" init --quiet -b rolling
 git -C "$UPSTREAM6" -c user.name="Fixture" -c user.email="fixture@example.invalid" add -A
 git -C "$UPSTREAM6" -c user.name="Fixture" -c user.email="fixture@example.invalid" \

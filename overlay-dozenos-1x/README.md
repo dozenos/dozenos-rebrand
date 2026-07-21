@@ -24,6 +24,9 @@ overlay-dozenos-1x/
     pin-opam-ocaml-branch.sh         opam pins: #<sha> -> #rolling (see apply-overlay.sh header)
     strip-motd-logo-frame.sh         remove the VyOS box-drawing MOTD logo frame
     fix-snmp-test-localized-keys.sh  SNMPv3 smoketest key constants (see below)
+    fix-length-constrained-test-constants.sh
+                                     smoketest constants the +3-char rename grew
+                                     past an 8/15-char CLI ceiling (see below)
 ```
 
 ## The fix: default-login password hash (audit item #8/#23)
@@ -103,6 +106,37 @@ what snmpd computes. `value-fixes/fix-snmp-test-localized-keys.sh` parses
 the passwords/engine-id out of the file and recomputes all four constants
 (algorithm validated 6/6 against the upstream constants and the failing
 nightly's observed values -- see the script header).
+
+## The length-constrained smoketest constants
+
+Third instance of the same "value, not string" class, found 2026-07-21 by the
+nightly `test-image` gate (`test-no-interfaces-no-vpp`, 5/94 failing, run
+29835061325). `vyos` (4) -> `dozenos` (7) is a **+3-character** rewrite, and
+upstream sets several test constants right at a CLI validator's ceiling, so
+the transform pushes them over it and the `set` is rejected in `cli_set`
+before the test asserts anything:
+
+| file | constant | upstream | after transform | ceiling |
+| --- | --- | --- | --- | --- |
+| `test_protocols_nhrp.py` | `nhrp_secret` | `"vyos123"` (7) | 10 | 8 |
+| `test_vpn_ipsec.py` | `nhrp_secret` | `"vyos123"` (7) | 10 | 8 |
+| `test_protocols_ospf.py` | `password` | `'vyos1234'` (8) | 11 | 8 |
+| `test_protocols_ospf.py` | `plaintext_key` | `'vyos123'` (7) | 10 | 8 |
+| `test_service_dns_dynamic.py` | `vrf_name` | `f'vyos-test-{vrf_table}'` (15) | 18 | 15 |
+
+Upstream's own values are all within their limits and upstream CI is green on
+these tests -- this is purely the rebrand's +3 landmine.
+`value-fixes/fix-length-constrained-test-constants.sh` substitutes the
+**4-character** token `dzos` in these five constants only, restoring each to
+its exact upstream byte length (including `vyos-test-58710`, which upstream
+sets at exactly the 15-character VRF ceiling). None of these are values a
+user ever sees or types -- they are test-local secrets and a test-local VRF
+name -- and `dzos` carries no `vyos`, so the `--verify` gate stays clean.
+
+The scope is five named constants matched by anchored per-constant regexes,
+not a blanket `dozenos` -> `dzos` pass: a wildcard would silently shorten
+brand strings that tests legitimately assert against. New violations are
+meant to surface as a nightly failure and earn an explicit entry here.
 
 ## What's deliberately NOT here (and why)
 
