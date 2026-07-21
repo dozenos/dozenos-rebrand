@@ -215,6 +215,39 @@ class TestServiceDDNS:
         vrf_table = '58710'
         vrf_name = f'dozenos-test-{vrf_table}'
 EOF
+
+  # rebake-ssh-testca-cert.sh target: the three baked fixture literals (bodies
+  # stubbed -- the script replaces them wholesale) plus the transformed
+  # user/principal literals it validates the new certificate against. The
+  # decoy test_user earlier in the file is the real upstream layout, and must
+  # not be the one the script matches.
+  cat > "$t/smoketest/scripts/cli/test_service_ssh.py" <<'EOF'
+ca_cert_data = """
+AAAAB3NzaC1yc2EPLACEHOLDERca
+"""
+
+cert_user_key = """-----BEGIN OPENSSH PRIVATE KEY-----
+PLACEHOLDERkey
+-----END OPENSSH PRIVATE KEY-----
+"""
+
+cert_user_signed = """
+ssh-rsa-cert-v01@openssh.com AAAAPLACEHOLDERcert
+"""
+
+class TestServiceSSH:
+    def test_ssh_login_user(self):
+        test_user = 'ssh_test'
+
+    def test_ssh_trusted_user_ca(self):
+        ca_cert_name = 'test_ca'
+        public_key_type = 'ssh-rsa'
+        test_user = 'dozenos_testca'
+        principal = 'dozenos'
+
+    def test_ssh_fido(self):
+        pass
+EOF
 }
 
 # ---------------------------------------------------------------------------
@@ -374,6 +407,49 @@ if grep -qF "password = 'secret'" "$CLI/test_vpn_ipsec.py" \
   ok "unrelated constants in the same files left untouched"
 else
   bad "an unrelated constant was modified"
+fi
+
+# 11. rebake-ssh-testca-cert.sh: the three stub literals are replaced by the
+#     committed fixture, and the certificate covers the transformed username
+#     and principal.
+SSH="$CLI/test_service_ssh.py"
+if ! grep -qF "PLACEHOLDER" "$SSH"; then
+  ok "baked SSH trusted-user-CA fixture replaced (all 3 literals)"
+else
+  bad "an SSH fixture literal was not replaced"; grep -n PLACEHOLDER "$SSH"
+fi
+if grep -qF -- "-----BEGIN OPENSSH PRIVATE KEY-----" "$SSH" \
+   && grep -qF "ssh-rsa-cert-v01@openssh.com" "$SSH"; then
+  ok "rebaked SSH fixture keeps the private-key and certificate framing"
+else
+  bad "rebaked SSH fixture lost its framing"; cat "$SSH"
+fi
+if grep -qF "test_user = 'ssh_test'" "$SSH"; then
+  ok "the unrelated test_user earlier in the file is untouched"
+else
+  bad "the decoy test_user was modified"
+fi
+# The certificate the fixture ships must actually name the transformed user
+# and principal -- the whole point of the rebake.
+if OUT_SSHP=$(python3 - "$TOOLKIT/overlay-dozenos-1x/data/ssh-testca/user-cert.pub" <<'PYEOF'
+import base64, struct, sys
+raw = base64.b64decode(open(sys.argv[1]).read().split()[1])
+def s(b, o):
+    (n,) = struct.unpack(">I", b[o:o+4]); return b[o+4:o+4+n], o+4+n
+o = 0
+for _ in range(4): _, o = s(raw, o)
+o += 12
+_, o = s(raw, o)
+blob, o = s(raw, o)
+out, p = [], 0
+while p < len(blob):
+    v, p = s(blob, p); out.append(v.decode())
+print(",".join(out))
+PYEOF
+) && [ "$OUT_SSHP" = "dozenos,dozenos_testca" ]; then
+  ok "committed certificate carries exactly the dozenos principals"
+else
+  bad "committed certificate principals are '$OUT_SSHP', expected 'dozenos,dozenos_testca'"
 fi
 
 # ---------------------------------------------------------------------------

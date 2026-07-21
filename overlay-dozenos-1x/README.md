@@ -24,6 +24,7 @@ overlay-dozenos-1x/
     pin-opam-ocaml-branch.sh         opam pins: #<sha> -> #rolling (see apply-overlay.sh header)
     strip-motd-logo-frame.sh         remove the VyOS box-drawing MOTD logo frame
     fix-snmp-test-localized-keys.sh  SNMPv3 smoketest key constants (see below)
+    rebake-ssh-testca-cert.sh        trusted-user-CA fixture with dozenos principals
     fix-length-constrained-test-constants.sh
                                      smoketest constants the +3-char rename grew
                                      past an 8/15-char CLI ceiling (see below)
@@ -137,6 +138,43 @@ The scope is five named constants matched by anchored per-constant regexes,
 not a blanket `dozenos` -> `dzos` pass: a wildcard would silently shorten
 brand strings that tests legitimately assert against. New violations are
 meant to surface as a nightly failure and earn an explicit entry here.
+
+## The SSH trusted-user-CA certificate fixture
+
+Fourth instance of the "value, not string" class, found in the same
+2026-07-21 nightly. `test_service_ssh.py`'s `test_ssh_trusted_user_ca` mixes
+**live Python literals** with **pre-baked base64 SSH material**. The four-form
+pass rewrites the literals (`test_user = 'vyos_testca'` -> `'dozenos_testca'`,
+`principal = 'vyos'` -> `'dozenos'`) but cannot reach inside the signed
+certificate, whose principal list stays `vyos, vyos_testca`. The test logs in
+as `dozenos_testca` with `AuthorizedPrincipalsFile none`, so sshd requires the
+certificate to name the *username* as a principal -- it does not, and the
+login is rejected.
+
+The traceback blames paramiko and is a red herring:
+
+```
+ValueError: PublicBlob type ssh-rsa-cert-v01@openssh.com incompatible with key type ssh-dss
+```
+
+paramiko's `SSHClient._auth` loops over `(RSAKey, DSSKey, ECDSAKey,
+Ed25519Key)` and only catches `SSHException`. `RSAKey` loads and authenticates
+but is *rejected* by sshd -- an `SSHException`, swallowed -- so it falls
+through to `DSSKey`, which mis-parses the OpenSSH RSA key and raises a bare
+`ValueError` that escapes uncaught. That fall-through is a real, open paramiko
+bug ([paramiko#2467](https://github.com/paramiko/paramiko/issues/2467)) but it
+only masks the message; the failure is ours. Upstream has no issue or PR for
+this test and upstream CI is green on it.
+
+`value-fixes/rebake-ssh-testca-cert.sh` swaps all three literals for material
+generated with principals `dozenos` + `dozenos_testca`, committed under
+`data/ssh-testca/`. The material is **pre-generated, never minted at overlay
+time**: `mirror-push.sh` requires the transform+overlay pipeline to be
+byte-stable for a given (upstream tree, toolkit), and a fresh keypair per run
+would make every sync produce a different mirror. The committed private key is
+throwaway smoketest material with no access to anything -- exactly what
+upstream ships in this same file. Regeneration instructions (only needed if it
+expires -- valid to 2036-01-01) are in the script header.
 
 ## What's deliberately NOT here (and why)
 

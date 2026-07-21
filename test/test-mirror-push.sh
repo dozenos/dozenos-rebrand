@@ -727,6 +727,34 @@ class TestServiceDDNS:
         vrf_name = f'vyos-test-{vrf_table}'
 EOF
 
+cat > "$UPSTREAM6/smoketest/scripts/cli/test_service_ssh.py" <<'EOF'
+ca_cert_data = """
+AAAAB3NzaC1yc2EPLACEHOLDERca
+"""
+
+cert_user_key = """-----BEGIN OPENSSH PRIVATE KEY-----
+PLACEHOLDERkey
+-----END OPENSSH PRIVATE KEY-----
+"""
+
+cert_user_signed = """
+ssh-rsa-cert-v01@openssh.com AAAAPLACEHOLDERcert
+"""
+
+class TestServiceSSH:
+    def test_ssh_login_user(self):
+        test_user = 'ssh_test'
+
+    def test_ssh_trusted_user_ca(self):
+        ca_cert_name = 'test_ca'
+        public_key_type = 'ssh-rsa'
+        test_user = 'vyos_testca'
+        principal = 'vyos'
+
+    def test_ssh_fido(self):
+        pass
+EOF
+
 git -C "$UPSTREAM6" init --quiet -b rolling
 git -C "$UPSTREAM6" -c user.name="Fixture" -c user.email="fixture@example.invalid" add -A
 git -C "$UPSTREAM6" -c user.name="Fixture" -c user.email="fixture@example.invalid" \

@@ -54,7 +54,16 @@
 #      syntactically fine and carry no `vyos`, they are just too long for
 #      the validator. See that script's own header.
 #
-# (pin-opam-upstream-tag.sh runs as step 3/6 -- see the NOT-here note below
+#   7. value-fixes/rebake-ssh-testca-cert.sh -- swap the trusted-user-CA
+#      fixture in test_service_ssh.py (CA public key, user private key,
+#      signed certificate) for pre-generated material whose principals are
+#      `dozenos` + `dozenos_testca`. The four-form pass renames the test's
+#      user/principal LITERALS but cannot reach inside the baked
+#      certificate, so sshd rejects the login. Material is committed under
+#      data/ssh-testca/, never minted here -- mirror-push.sh requires a
+#      byte-stable pipeline. See that script's own header.
+#
+# (pin-opam-upstream-tag.sh runs as step 3/7 -- see the NOT-here note below
 # for why it exists.)
 #
 # What is deliberately NOT here (verified against a fresh upstream clone --
@@ -74,7 +83,7 @@
 #     is the original upstream vyos1x-config/vyconf commit -- which does NOT
 #     exist in the mode-B snapshot mirrors (each carries a fresh single
 #     commit). opam then dies "Commit not found on repository". That IS
-#     handled here, by step 3/6 (value-fixes/pin-opam-upstream-tag.sh), which
+#     handled here, by step 3/7 (value-fixes/pin-opam-upstream-tag.sh), which
 #     re-pins both to `#upstream-<sha>` -- the tag mirror-push.sh --pin-commit
 #     puts on the mirror for exactly that upstream commit. This was the
 #     dozenos-1x package-build failure caught by the first full CI run.
@@ -137,22 +146,25 @@ TARGET=$(cd "$TARGET" && pwd)
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 VALUE_FIXES="$SCRIPT_DIR/value-fixes"
 
-echo "== apply-overlay (dozenos-1x): step 1/6 -- value-fixes/regen-default-password-hash.sh =="
+echo "== apply-overlay (dozenos-1x): step 1/7 -- value-fixes/regen-default-password-hash.sh =="
 "$VALUE_FIXES/regen-default-password-hash.sh" "$TARGET"
 
-echo "== apply-overlay (dozenos-1x): step 2/6 -- value-fixes/pin-nonmirrored-org-refs.sh =="
+echo "== apply-overlay (dozenos-1x): step 2/7 -- value-fixes/pin-nonmirrored-org-refs.sh =="
 "$VALUE_FIXES/pin-nonmirrored-org-refs.sh" "$TARGET"
 
-echo "== apply-overlay (dozenos-1x): step 3/6 -- value-fixes/pin-opam-upstream-tag.sh =="
+echo "== apply-overlay (dozenos-1x): step 3/7 -- value-fixes/pin-opam-upstream-tag.sh =="
 "$VALUE_FIXES/pin-opam-upstream-tag.sh" "$TARGET"
 
-echo "== apply-overlay (dozenos-1x): step 4/6 -- value-fixes/strip-motd-logo-frame.sh =="
+echo "== apply-overlay (dozenos-1x): step 4/7 -- value-fixes/strip-motd-logo-frame.sh =="
 "$VALUE_FIXES/strip-motd-logo-frame.sh" "$TARGET"
 
-echo "== apply-overlay (dozenos-1x): step 5/6 -- value-fixes/fix-snmp-test-localized-keys.sh =="
+echo "== apply-overlay (dozenos-1x): step 5/7 -- value-fixes/fix-snmp-test-localized-keys.sh =="
 "$VALUE_FIXES/fix-snmp-test-localized-keys.sh" "$TARGET"
 
-echo "== apply-overlay (dozenos-1x): step 6/6 -- value-fixes/fix-length-constrained-test-constants.sh =="
+echo "== apply-overlay (dozenos-1x): step 6/7 -- value-fixes/fix-length-constrained-test-constants.sh =="
 "$VALUE_FIXES/fix-length-constrained-test-constants.sh" "$TARGET"
+
+echo "== apply-overlay (dozenos-1x): step 7/7 -- value-fixes/rebake-ssh-testca-cert.sh =="
+"$VALUE_FIXES/rebake-ssh-testca-cert.sh" "$TARGET"
 
 echo "apply-overlay (dozenos-1x): done"
