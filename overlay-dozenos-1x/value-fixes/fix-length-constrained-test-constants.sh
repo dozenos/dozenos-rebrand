@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # fix-length-constrained-test-constants.sh -- restore the upstream byte
-# length of five smoketest constants that the four-form pass grew past a
+# length of six smoketest constants that the four-form pass grew past a
 # CLI validator's maximum.
 #
 # WHY: `vyos` (4) -> `dozenos` (7) is a +3-character rewrite. Upstream sets
@@ -14,10 +14,12 @@
 #   test_protocols_ospf.py     password      'vyos1234' (8)  -> 11  > 8
 #   test_protocols_ospf.py     plaintext_key 'vyos123'  (7)  -> 10  > 8
 #   test_service_dns_dynamic.py vrf_name  f'vyos-test-{vrf_table}' (15) -> 18 > 15
+#   test_system_flow-accounting.py vrf_name 'vyos-test-mgmt' (14)  -> 17  > 15
 #
 #   "Password should contain up to eight non-whitespace characters"  (nhrp)
 #   "Password must be 8 characters or less"                          (ospf)
-#   "VRF instance name must be 15 characters or less ..."            (ddns)
+#   "VRF instance name must be 15 characters or less ..."            (ddns,
+#                                                                     netflow)
 #
 # This is NOT an upstream bug -- upstream's own values are all within
 # their limits, and upstream CI is green on these tests. It is the
@@ -25,17 +27,20 @@
 # fix-snmp-test-localized-keys.sh: the transform produced a syntactically
 # correct string that is semantically invalid. Found 2026-07-21 by the
 # nightly test-image gate (run 29835061325, test-no-interfaces-no-vpp,
-# 5/94 failing).
+# 5/94 failing). The test_system_flow-accounting.py entry is a later
+# recurrence of the very same class: upstream f6a1ff9 (T9122, 2026-08-08)
+# added test_netflow_vrf with a fresh 14-character VRF name, caught by the
+# nightly test-image gate on 2026-08-10 (run 31359450538).
 #
 # THE FIX: substitute a 4-character brand token, `dozenos` -> `dzos`, in
-# these five constants only. `dzos` is the same length as `vyos`, so every
+# these six constants only. `dzos` is the same length as `vyos`, so every
 # constant is restored to its EXACT upstream byte length -- including
 # `vyos-test-58710`, which upstream sets at exactly the 15-character VRF
 # ceiling. Nothing here is a value the user ever sees or types: these are
 # test-local secrets and a test-local VRF name. `dzos` carries no `vyos`
 # substring, so the final --verify gate stays clean.
 #
-# Scope is deliberately narrow -- five named constants in four files, each
+# Scope is deliberately narrow -- six named constants in five files, each
 # matched by its own anchored regex. A blanket `dozenos` -> `dzos` pass over
 # the smoketests would silently shorten brand strings that tests legitimately
 # assert against (paths, usernames, config values), so new violations are
@@ -90,6 +95,9 @@ CONSTANTS = [
     ("smoketest/scripts/cli/test_service_dns_dynamic.py", "vrf_name",
      r"(?m)^(\s*vrf_name = f')([^']*)(')$",
      "dozenos-test-{vrf_table}", "dzos-test-{vrf_table}", 15, "vrf instance name"),
+    ("smoketest/scripts/cli/test_system_flow-accounting.py", "vrf_name",
+     r"(?m)^(\s*vrf_name = ')([^']*)(')$",
+     "dozenos-test-mgmt", "dzos-test-mgmt", 15, "vrf instance name"),
 ]
 
 # vrf_name is an f-string: its rendered length is what the validator sees,

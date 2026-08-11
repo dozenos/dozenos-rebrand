@@ -182,7 +182,7 @@ class TestSNMPService:
         hashed_password = 'e11c83f2c510540a3c4de84ee66de440'
 EOF
 
-  # fix-length-constrained-test-constants.sh targets: the five post-transform
+  # fix-length-constrained-test-constants.sh targets: the six post-transform
   # constants that overshoot an 8- or 15-character CLI validator ceiling
   # (real repo values, real surrounding quoting/indentation).
   cat > "$t/smoketest/scripts/cli/test_protocols_nhrp.py" <<'EOF'
@@ -214,6 +214,13 @@ class TestServiceDDNS:
     def test_08_dyndns_vrf(self):
         vrf_table = '58710'
         vrf_name = f'dozenos-test-{vrf_table}'
+EOF
+
+  cat > "$t/smoketest/scripts/cli/test_system_flow-accounting.py" <<'EOF'
+class TestSystemFlowAccounting:
+    def test_netflow_vrf(self):
+        vrf_name = 'dozenos-test-mgmt'
+        table = '1010'
 EOF
 
   # rebake-ssh-testca-cert.sh target: the three baked fixture literals (bodies
@@ -376,7 +383,7 @@ else
   bad "recomputed SNMPv3 constants do not match the expected localized keys"; cat "$SNMP"
 fi
 
-# 10. fix-length-constrained-test-constants.sh: all five constants carry the
+# 10. fix-length-constrained-test-constants.sh: all six constants carry the
 #     4-character `dzos` token, restoring upstream's exact byte length, and
 #     none still renders over its validator ceiling.
 CLI="$TREE/smoketest/scripts/cli"
@@ -384,22 +391,24 @@ if grep -qF 'nhrp_secret = "dzos123"' "$CLI/test_protocols_nhrp.py" \
    && grep -qF 'nhrp_secret = "dzos123"' "$CLI/test_vpn_ipsec.py" \
    && grep -qF "password = 'dzos1234'" "$CLI/test_protocols_ospf.py" \
    && grep -qF "plaintext_key = 'dzos123'" "$CLI/test_protocols_ospf.py" \
-   && grep -qF "vrf_name = f'dzos-test-{vrf_table}'" "$CLI/test_service_dns_dynamic.py"; then
-  ok "length-constrained constants shortened to the dzos token (all 5)"
+   && grep -qF "vrf_name = f'dzos-test-{vrf_table}'" "$CLI/test_service_dns_dynamic.py" \
+   && grep -qF "vrf_name = 'dzos-test-mgmt'" "$CLI/test_system_flow-accounting.py"; then
+  ok "length-constrained constants shortened to the dzos token (all 6)"
 else
   bad "length-constrained constants not shortened as expected"
   grep -rnE "nhrp_secret|plaintext_key|vrf_name|password = " "$CLI" || true
 fi
-if ! grep -qE "nhrp_secret = \"dozenos|(password|plaintext_key) = 'dozenos|vrf_name = f'dozenos" \
+if ! grep -qE "nhrp_secret = \"dozenos|(password|plaintext_key) = 'dozenos|vrf_name = f?'dozenos" \
      "$CLI/test_protocols_nhrp.py" "$CLI/test_vpn_ipsec.py" \
-     "$CLI/test_protocols_ospf.py" "$CLI/test_service_dns_dynamic.py"; then
+     "$CLI/test_protocols_ospf.py" "$CLI/test_service_dns_dynamic.py" \
+     "$CLI/test_system_flow-accounting.py"; then
   ok "no over-ceiling dozenos constant survives"
 else
   bad "an over-ceiling dozenos constant is still present"
-  grep -nE "nhrp_secret = \"dozenos|(password|plaintext_key) = 'dozenos|vrf_name = f'dozenos" \
+  grep -nE "nhrp_secret = \"dozenos|(password|plaintext_key) = 'dozenos|vrf_name = f?'dozenos" \
     "$CLI"/*.py || true
 fi
-# Unrelated constants in the same files must be untouched -- the fix is five
+# Unrelated constants in the same files must be untouched -- the fix is six
 # anchored constants, not a blanket dozenos -> dzos pass.
 if grep -qF "password = 'secret'" "$CLI/test_vpn_ipsec.py" \
    && grep -qF "password = 'paSS_@4ord'" "$CLI/test_service_dns_dynamic.py" \

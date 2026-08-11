@@ -124,20 +124,24 @@ before the test asserts anything:
 | `test_protocols_ospf.py` | `password` | `'vyos1234'` (8) | 11 | 8 |
 | `test_protocols_ospf.py` | `plaintext_key` | `'vyos123'` (7) | 10 | 8 |
 | `test_service_dns_dynamic.py` | `vrf_name` | `f'vyos-test-{vrf_table}'` (15) | 18 | 15 |
+| `test_system_flow-accounting.py` | `vrf_name` | `'vyos-test-mgmt'` (14) | 17 | 15 |
 
 Upstream's own values are all within their limits and upstream CI is green on
 these tests -- this is purely the rebrand's +3 landmine.
 `value-fixes/fix-length-constrained-test-constants.sh` substitutes the
-**4-character** token `dzos` in these five constants only, restoring each to
+**4-character** token `dzos` in these six constants only, restoring each to
 its exact upstream byte length (including `vyos-test-58710`, which upstream
 sets at exactly the 15-character VRF ceiling). None of these are values a
 user ever sees or types -- they are test-local secrets and a test-local VRF
 name -- and `dzos` carries no `vyos`, so the `--verify` gate stays clean.
 
-The scope is five named constants matched by anchored per-constant regexes,
+The scope is six named constants matched by anchored per-constant regexes,
 not a blanket `dozenos` -> `dzos` pass: a wildcard would silently shorten
 brand strings that tests legitimately assert against. New violations are
-meant to surface as a nightly failure and earn an explicit entry here.
+meant to surface as a nightly failure and earn an explicit entry here --
+`test_system_flow-accounting.py`'s `vrf_name` did exactly that on
+2026-08-10 (run 31359450538), after upstream f6a1ff9 (T9122) added
+`test_netflow_vrf`.
 
 ## The SSH trusted-user-CA certificate fixture
 
