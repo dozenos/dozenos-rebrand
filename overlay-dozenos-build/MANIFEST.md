@@ -407,14 +407,14 @@ unexpected content).
 
 | Script | Target | Audit item | Decision |
 |---|---|---|---|
-| `revert-source-mirror-urls.sh` | `scripts/package-build/linux-kernel/{build-intel-qat.sh,build-realtek-r8126.py,build-realtek-r8152.py}` | new to this cycle (flagged in `.powerloop` notes, not a numbered audit item) | **Revert to real upstream `packages.vyos.net/source-mirror`** (see decision writeup below) |
+| `revert-source-mirror-urls.sh` | `scripts/package-build/linux-kernel/{build-intel-qat.sh,build-realtek-r8126.sh,build-realtek-r8152.sh}` | new to this cycle (flagged in `.powerloop` notes, not a numbered audit item) | **Revert to real upstream `packages.vyos.net/source-mirror`** (see decision writeup below) |
 | `vyos-mirror-guard.sh` | `scripts/image-build/build-dozenos-image` (post-rename path) | #13 | **KEEP the guard** (see decision writeup below) |
 | `dockerfile-go-path.sh` | `docker/Dockerfile` | new to this cycle (not a numbered audit item) | **Add `ENV PATH="/opt/go/bin:${PATH}"`** — upstream only exports the Go PATH via `/etc/bash.bashrc`, which non-interactive CI builds never source, so every recipe shelling out to `go` died with "go: not found" |
 | `qemu-install-no-grub-nav.sh` | `scripts/check-qemu-install` | dozenos-nightly-build#1 | **Drop the installed-system `BOOTLOADERchooseSerialConsole` call** (see decision writeup below) |
 
 ### Decision: source-mirror fetch URLs — REVERT to `packages.vyos.net`
 
-`build-intel-qat.sh`, `build-realtek-r8126.py`, `build-realtek-r8152.py`
+`build-intel-qat.sh`, `build-realtek-r8126.sh`, `build-realtek-r8152.sh`
 fetch real vendor tarballs (Intel QAT driver blob, Realtek r8126/r8152
 firmware) from `https://packages.vyos.net/source-mirror/*`. Confirmed by
 simulating the transform against each file: the four-form pass rewrites this
@@ -619,9 +619,9 @@ HEAD` of the local `vyos-build` checkout):
   source-mirror URLs + 2 `pin-toolchain-apt-source.sh` reverts + the 6
   then-buggy new-recipe `scm_url`s). All 5 individually enumerated and
   confirmed to be exactly the deliberate, non-git build-time-pointer set:
-  - `scripts/package-build/linux-kernel/build-realtek-r8152.py` →
+  - `scripts/package-build/linux-kernel/build-realtek-r8152.sh` →
     `packages.vyos.net/source-mirror/...` (reverted tarball fetch)
-  - `scripts/package-build/linux-kernel/build-realtek-r8126.py` → same
+  - `scripts/package-build/linux-kernel/build-realtek-r8126.sh` → same
   - `scripts/package-build/linux-kernel/build-intel-qat.sh` → same
   - `docker/Dockerfile` → `cdn.vyos.io` (reverted syft download host)
   - `docker/dozenos-dev.list` → `packages.vyos.net` (reverted apt-source host)

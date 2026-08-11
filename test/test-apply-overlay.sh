@@ -144,7 +144,7 @@ build_cmd = "dpkg-buildpackage -us -uc -tc -b"
 EOF
 
   # -- logic-patches/revert-source-mirror-urls.sh targets --
-  for f in build-intel-qat.sh build-realtek-r8126.py build-realtek-r8152.py; do
+  for f in build-intel-qat.sh build-realtek-r8126.sh build-realtek-r8152.sh; do
     printf '#!/usr/bin/env bash\nURL="https://packages.dozenos.net/source-mirror/%s.tar.gz"\n' "$f" \
       > "$t/scripts/package-build/linux-kernel/$f"
   done
@@ -324,7 +324,7 @@ assert_both_modes_state() {
 
   local n
   n=0
-  for f in build-intel-qat.sh build-realtek-r8126.py build-realtek-r8152.py; do
+  for f in build-intel-qat.sh build-realtek-r8126.sh build-realtek-r8152.sh; do
     grep -qF 'https://packages.vyos.net/source-mirror/' "$tree/scripts/package-build/linux-kernel/$f" && n=$((n + 1))
   done
   if [ "$n" -eq 3 ]; then

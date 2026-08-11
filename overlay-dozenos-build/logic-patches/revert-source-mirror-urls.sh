@@ -28,8 +28,8 @@
 # quietly paper over it):
 #
 #   scripts/package-build/linux-kernel/build-intel-qat.sh       (line ~17)
-#   scripts/package-build/linux-kernel/build-realtek-r8126.py   (line ~37)
-#   scripts/package-build/linux-kernel/build-realtek-r8152.py   (line ~38)
+#   scripts/package-build/linux-kernel/build-realtek-r8126.sh   (line ~17)
+#   scripts/package-build/linux-kernel/build-realtek-r8152.sh   (line ~17)
 #
 # Usage:
 #   revert-source-mirror-urls.sh <target-tree>
@@ -55,8 +55,8 @@ LK="$TARGET/scripts/package-build/linux-kernel"
 # entries: "relative-file|dozenos-form|vyos-form"
 ENTRIES=(
   "build-intel-qat.sh|https://packages.dozenos.net/source-mirror/|https://packages.vyos.net/source-mirror/"
-  "build-realtek-r8126.py|https://packages.dozenos.net/source-mirror/|https://packages.vyos.net/source-mirror/"
-  "build-realtek-r8152.py|https://packages.dozenos.net/source-mirror/|https://packages.vyos.net/source-mirror/"
+  "build-realtek-r8126.sh|https://packages.dozenos.net/source-mirror/|https://packages.vyos.net/source-mirror/"
+  "build-realtek-r8152.sh|https://packages.dozenos.net/source-mirror/|https://packages.vyos.net/source-mirror/"
 )
 
 changed=0

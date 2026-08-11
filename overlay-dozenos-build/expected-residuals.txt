@@ -40,8 +40,8 @@
 #     overlay-dozenos-build/logic-patches/revert-source-mirror-urls.sh,
 #     overlay-dozenos-build/value-fixes/pin-toolchain-apt-source.sh, and
 #     overlay-dozenos-build/value-fixes/pin-nonmirrored-org-refs.sh. ------------------------
-scripts/package-build/linux-kernel/build-realtek-r8152.py|packages.vyos.net/source-mirror|source-mirror
-scripts/package-build/linux-kernel/build-realtek-r8126.py|packages.vyos.net/source-mirror|source-mirror
+scripts/package-build/linux-kernel/build-realtek-r8152.sh|packages.vyos.net/source-mirror|source-mirror
+scripts/package-build/linux-kernel/build-realtek-r8126.sh|packages.vyos.net/source-mirror|source-mirror
 scripts/package-build/linux-kernel/build-intel-qat.sh|packages.vyos.net/source-mirror|source-mirror
 docker/Dockerfile|cdn.vyos.io|cdn-syft
 docker/dozenos-dev.list|packages.vyos.net|toolchain-apt
