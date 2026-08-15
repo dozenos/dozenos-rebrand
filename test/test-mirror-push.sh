@@ -109,6 +109,12 @@ if [ "$1" = "repo" ] && [ "$2" = "view" ]; then
     fi
   fi
   # plain `gh repo view <name>` existence probe (used by real seed push path)
+  # the pin-snapshot mirrors always "exist" -- the --ensure-pin-tags run (item
+  # #14 Run 6) models the real layout, where they were seeded long ago even
+  # when the repo under test is being seeded fresh
+  case "$3" in
+    dozenos/dozenos1x-config|dozenos/vyconf) exit 0 ;;
+  esac
   [ "${GH_STUB_MODE:-seed}" = "sync" ] && exit 0
   exit 1
 fi
@@ -727,6 +733,13 @@ class TestServiceDDNS:
         vrf_name = f'vyos-test-{vrf_table}'
 EOF
 
+cat > "$UPSTREAM6/smoketest/scripts/cli/test_system_flow-accounting.py" <<'EOF'
+class TestSystemFlowAccounting:
+    def test_netflow_vrf(self):
+        vrf_name = 'vyos-test-mgmt'
+        table = '1010'
+EOF
+
 cat > "$UPSTREAM6/smoketest/scripts/cli/test_service_ssh.py" <<'EOF'
 ca_cert_data = """
 AAAAB3NzaC1yc2EPLACEHOLDERca
@@ -755,6 +768,45 @@ class TestServiceSSH:
         pass
 EOF
 
+# --ensure-pin-tags coverage, still network-free: the fixture Makefile pins
+# both OCaml config libs to a local fixture repo's HEAD, and the gitconfig
+# below rewrites every github.com URL the pin path would touch (the two pin
+# sources and the two dozenos pin-snapshot mirrors) to local repos via
+# url.insteadOf. Also exercises generate_sync_workflow's @@PIN_TAG_REPOS@@
+# baking (self-push token scoped to the pin-snapshot mirrors).
+PIN_SRC="$WORK/pin-lib-src"
+mkdir -p "$PIN_SRC"
+printf 'pinned OCaml lib fixture\n' > "$PIN_SRC/README.md"
+git -C "$PIN_SRC" init --quiet -b main
+git -C "$PIN_SRC" -c user.name="Fixture" -c user.email="fixture@example.invalid" add -A
+git -C "$PIN_SRC" -c user.name="Fixture" -c user.email="fixture@example.invalid" \
+  commit --quiet -m "pinned lib import"
+# mirror-push --pin-commit fetches the sha explicitly, not a ref
+git -C "$PIN_SRC" config uploadpack.allowAnySHA1InWant true
+PIN_SHA=$(git -C "$PIN_SRC" rev-parse HEAD)
+
+# both pin-snapshot mirrors map to one empty bare repo: the tag-exists
+# ls-remote finds nothing, and --dry-run never pushes
+PIN_BARE="$WORK/pin-mirror.git"
+git init --quiet --bare "$PIN_BARE"
+
+PIN_GITCONFIG="$WORK/pin-gitconfig"
+cat > "$PIN_GITCONFIG" <<EOF
+[url "file://$PIN_SRC/"]
+	insteadOf = https://github.com/vyos/vyos1x-config.git
+	insteadOf = https://github.com/vyos/vyconf.git
+[url "file://$PIN_BARE/"]
+	insteadOf = https://github.com/dozenos/dozenos1x-config.git
+	insteadOf = https://github.com/dozenos/vyconf.git
+EOF
+
+mkdir -p "$UPSTREAM6/libvyosconfig"
+cat > "$UPSTREAM6/libvyosconfig/Makefile" <<EOF
+depends:
+	opam pin add vyos1x-config https://github.com/vyos/vyos1x-config.git#$PIN_SHA -y
+	opam pin add vyconf https://github.com/vyos/vyconf.git#$PIN_SHA -y
+EOF
+
 git -C "$UPSTREAM6" init --quiet -b rolling
 git -C "$UPSTREAM6" -c user.name="Fixture" -c user.email="fixture@example.invalid" add -A
 git -C "$UPSTREAM6" -c user.name="Fixture" -c user.email="fixture@example.invalid" \
@@ -762,9 +814,10 @@ git -C "$UPSTREAM6" -c user.name="Fixture" -c user.email="fixture@example.invali
 UPSTREAM6_URL="file://$UPSTREAM6"
 
 WORK_DIR6="$WORK/run-overlay-dozenos-1x"
-OUT6=$(GH_STUB_MODE=seed "$SCRIPT" "$UPSTREAM6_URL" --target dozenos-1x-test \
+OUT6=$(GH_STUB_MODE=seed GIT_CONFIG_GLOBAL="$PIN_GITCONFIG" \
+  "$SCRIPT" "$UPSTREAM6_URL" --target dozenos-1x-test \
   --branch rolling --overlay "$TOOLKIT/overlay-dozenos-1x" --allow-residuals \
-  --dry-run --work "$WORK_DIR6" 2>&1)
+  --ensure-pin-tags --dry-run --work "$WORK_DIR6" 2>&1)
 RC6=$?
 
 if [ "$RC6" -eq 0 ]; then ok "--overlay dry-run exits 0"; else
@@ -778,11 +831,25 @@ else
   bad "--overlay: sync.yml was not generated"
 fi
 
-if grep -qF 'MIRROR_PUSH_FLAGS="--overlay dozenos-rebrand/overlay-dozenos-1x --allow-residuals"' "$SYNC6" 2>/dev/null; then
-  ok "--overlay: sync.yml bakes '--overlay dozenos-rebrand/overlay-dozenos-1x --allow-residuals'"
+if grep -qF 'MIRROR_PUSH_FLAGS="--overlay dozenos-rebrand/overlay-dozenos-1x --allow-residuals --ensure-pin-tags"' "$SYNC6" 2>/dev/null; then
+  ok "--overlay: sync.yml bakes '--overlay dozenos-rebrand/overlay-dozenos-1x --allow-residuals --ensure-pin-tags'"
 else
-  bad "--overlay: sync.yml did not bake the expected overlay+allow-residuals flags line"
+  bad "--overlay: sync.yml did not bake the expected overlay+allow-residuals+ensure-pin-tags flags line"
   grep 'MIRROR_PUSH_FLAGS=' "$SYNC6" 2>/dev/null || true
+fi
+
+# shellcheck disable=SC2016 # single-quoted on purpose: literal grep -F pattern
+if grep -qF 'repositories: ${{ env.REPO_NAME }},dozenos1x-config,vyconf' "$SYNC6" 2>/dev/null; then
+  ok "--overlay: sync.yml scopes the self-push token to the pin-snapshot mirrors too (@@PIN_TAG_REPOS@@)"
+else
+  bad "--overlay: sync.yml did not bake the pin-snapshot mirrors into the self-push token scope"
+  grep 'repositories:' "$SYNC6" 2>/dev/null || true
+fi
+
+if printf '%s' "$OUT6" | grep -qF 'all 2 pin tag(s) present'; then
+  ok "--overlay: ensure-pin-tags handled both opam pins (network-free via url.insteadOf)"
+else
+  bad "--overlay: ensure-pin-tags did not complete for both opam pins"
 fi
 
 if python3 -c "import yaml,sys; yaml.safe_load(open('$SYNC6'))" 2>/dev/null; then
