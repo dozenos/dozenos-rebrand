@@ -258,8 +258,9 @@ portable_overlay_path() {
 # <clone-dir>/.github/workflows/sync.yml, baking in the flags THIS
 # mirror-push.sh invocation used (minus the upstream URL, which is never
 # baked -- it stays a caller-supplied secret at CI time, see SYNC.md).
-# Byte-stable: for a given (BRANCH, BUILD_REPO, OVERLAY_DIR, ALLOW_RESIDUALS)
-# tuple the output is identical on every call -- the target name never
+# Byte-stable: for a given (BRANCH, BUILD_REPO, OVERLAY_DIR, ALLOW_RESIDUALS,
+# ENSURE_PIN_TAGS + the clone's pin-repo set) tuple the output is identical
+# on every call -- the target name never
 # appears as literal text, only derived at CI runtime from the always-
 # populated `GITHUB_REPOSITORY` runner env var (`${GITHUB_REPOSITORY##*/}`,
 # NOT the `github.event.repository.name` expression -- that field is unset on
@@ -290,6 +291,23 @@ generate_sync_workflow() {
     flags="${flags:+$flags }--ensure-pin-tags"
   fi
 
+  # --ensure-pin-tags pushes upstream-<sha> tags to the pin-snapshot mirrors
+  # (ensure-pin-tags.sh), so the self-push App token must be scoped to those
+  # repos too -- a token scoped to REPO_NAME alone 403s the moment upstream
+  # moves a pin and a new tag actually needs pushing. The names are read
+  # from the clone's own opam pins, which the overlay has already rewritten
+  # to github.com/dozenos/<repo> by this point (pin-opam-upstream-tag.sh).
+  local pin_tag_repos=""
+  if [ "$ENSURE_PIN_TAGS" -eq 1 ]; then
+    local pin_makefile pin_names
+    pin_makefile=$(find "$clone_dir" -maxdepth 2 -name Makefile -path '*config/Makefile' | head -1)
+    [ -n "$pin_makefile" ] || die "generate_sync_workflow: --ensure-pin-tags set but no lib*config/Makefile found in clone -- upstream layout drift, re-review by hand"
+    pin_names=$(grep -oE 'https://github\.com/dozenos/[^ #]+\.git#' "$pin_makefile" \
+      | sed -e 's|.*/||' -e 's|\.git#$||' | sort -u | paste -sd, -)
+    [ -n "$pin_names" ] || die "generate_sync_workflow: --ensure-pin-tags set but no github.com/dozenos opam pins found in ${pin_makefile#"$clone_dir/"} -- pin rewrite may have drifted, re-review by hand"
+    pin_tag_repos=",$pin_names"
+  fi
+
   if [ -n "$flags" ]; then
     flags_display="$flags"
   else
@@ -302,6 +320,7 @@ generate_sync_workflow() {
     -e "s|@@MIRROR_PUSH_FLAGS@@|$flags|g" \
     -e "s|@@MIRROR_PUSH_FLAGS_COMMENT@@|$flags_display|g" \
     -e "s|@@REBRAND_REF@@|$REBRAND_REF|g" \
+    -e "s|@@PIN_TAG_REPOS@@|$pin_tag_repos|g" \
     "$SYNC_TEMPLATE" > "$clone_dir/.github/workflows/sync.yml"
 }
 

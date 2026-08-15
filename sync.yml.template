@@ -76,9 +76,11 @@ jobs:
       # The self-push credential -- NOT github.token, which can never touch
       # .github/workflows/* (see the `permissions:` comment above) while
       # every mirror's tree carries this very sync.yml. Scoped to exactly
-      # this one repo; minted right before use, and the whole
-      # clone->transform->push pipeline runs well inside the token's ~1h
-      # lifetime.
+      # this repo plus -- only when --ensure-pin-tags is baked -- the
+      # pin-snapshot mirrors that step pushes upstream-<sha> tags to (repo
+      # names baked at render time from the clone's own opam pins); minted
+      # right before use, and the whole clone->transform->push pipeline
+      # runs well inside the token's ~1h lifetime.
       - name: Mint GitHub App token (self-push)
         id: push_token
         uses: actions/create-github-app-token@v3
@@ -86,7 +88,7 @@ jobs:
           client-id: ${{ vars.BUILD_APP_ID }}
           private-key: ${{ secrets.BUILD_APP_PRIVATE_KEY }}
           owner: dozenos
-          repositories: ${{ env.REPO_NAME }}
+          repositories: ${{ env.REPO_NAME }}@@PIN_TAG_REPOS@@
 
       # Lets mirror-push.sh's own plain `git clone/push https://github.com/...`
       # calls authenticate as the App token, without mirror-push.sh needing
