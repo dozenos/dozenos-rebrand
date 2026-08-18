@@ -410,7 +410,6 @@ unexpected content).
 | `revert-source-mirror-urls.sh` | `scripts/package-build/linux-kernel/{build-intel-qat.sh,build-realtek-r8126.sh,build-realtek-r8152.sh}` | new to this cycle (flagged in `.powerloop` notes, not a numbered audit item) | **Revert to real upstream `packages.vyos.net/source-mirror`** (see decision writeup below) |
 | `vyos-mirror-guard.sh` | `scripts/image-build/build-dozenos-image` (post-rename path) | #13 | **KEEP the guard** (see decision writeup below) |
 | `dockerfile-go-path.sh` | `docker/Dockerfile` | new to this cycle (not a numbered audit item) | **Add `ENV PATH="/opt/go/bin:${PATH}"`** — upstream only exports the Go PATH via `/etc/bash.bashrc`, which non-interactive CI builds never source, so every recipe shelling out to `go` died with "go: not found" |
-| `qemu-install-no-grub-nav.sh` | `scripts/check-qemu-install` | dozenos-nightly-build#1 | **Drop the installed-system `BOOTLOADERchooseSerialConsole` call** (see decision writeup below) |
 
 ### Decision: source-mirror fetch URLs — REVERT to `packages.vyos.net`
 
@@ -459,45 +458,21 @@ the exact post-transform text block (verified by simulating the transform
 against pristine upstream) and fails loudly if that block is not found,
 rather than trusting brittle line numbers.
 
-### Decision: installed-system GRUB navigation — DROP the call
+### Decision: installed-system GRUB navigation — RETIRED (upstream adopted the fix)
 
-`scripts/check-qemu-install` calls
-`BOOTLOADERchooseSerialConsole(c, live=False)` after `install image` finishes,
-blind-sending 7 keystrokes through *Boot options → Select console type → ttyS
-(serial)*. That selects a serial console the installed system is **already**
-configured for: the harness answers `S` to the installer's console prompt,
-`dozenos-1x`'s `image_installer.py` turns that into
-`grub.set_console_type('ttyS', DIR_DST_ROOT)`, and the version menuentry
-(`grub_dozenos_version.j2`) builds `console=ttyS0,<speed>` from that variable
-while `grub_common.j2`'s `setup_serial` puts GRUB itself on serial at
-config-load time. Confirmed empirically in a *passing* leg (testraid, nightly
-run 29721813734): the two post-install `reboot now` cycles take the
-`loginVM()` path, which sends no GRUB keys at all, and both reach the serial
-login normally.
-
-**Decision: delete the call and let the top-level menu's countdown boot the
-default entry.** The navigation is not just redundant, it is the sole source
-of the `test-vpp` flake (dozenos-nightly-build#1). It is open-loop — a fixed
-`time.sleep(1.5)` between keys with no verification of the current menu or
-highlight — so one dropped, duplicated, or mis-parsed key desynchronises
-every key after it with no recovery. In run 29721813734 the final RETURN
-landed while *Boot options* was highlighted, re-entering the submenu tree and
-parking the VM in *Select boot mode*; GRUB `submenu` blocks carry no timeout
-of their own and entering one cancels the top-level countdown, so the VM hung
-until the harness's 600 s `expect('[Ll]ogin:')` expired and declared the ISO
-unusable. Removing the keystrokes removes the whole failure class rather than
-making it rarer.
-
-The other call site,
-`BOOTLOADERchooseSerialConsole(c, live=(not args.cloud_init))`, is
-deliberately untouched, and the script fails loudly if it disappears:
-
-- `live=True` (Live ISO) genuinely needs navigation — the ISO menu defaults to
-  *Live system - KVM console* and the serial entry is two rows down.
-- `live=False` there is the cloud-init path, whose `console_type` comes from
-  the flavor file baked into a pre-assembled image rather than from the
-  installer. It is plausibly redundant too, but that is unverified and those
-  legs (`testc`/`testcvpp`) are green — a separate change if ever.
+`qemu-install-no-grub-nav.sh` used to delete the
+`BOOTLOADERchooseSerialConsole(c, live=False)` call after `install image`:
+open-loop blind keystrokes selecting a serial console the installed system
+was already configured for, and the sole source of the `test-vpp` hang
+(dozenos-nightly-build#1 — a desynchronised key parked the VM in a GRUB
+submenu with no timeout). Upstream vyos-build 0a8a6e0 (T9214, 2026-08-16)
+restructured that call site to the same conclusion: the navigation is
+best-effort because the default entry already boots the serial console
+selected during install, each submenu step is `expect`-verified before the
+next key, and losing the auto-boot race is a warning instead of a hang. That
+removes the failure class the patch existed for, so the patch is retired and
+the file ships as upstream wrote it (patch history and the full original
+rationale: git log for `logic-patches/qemu-install-no-grub-nav.sh`).
 
 **Upstreamable**: nothing here is DozenOS-specific, so this is a candidate to
 send to `vyos-build` (their own rolling CI dies the same way). Until then it
