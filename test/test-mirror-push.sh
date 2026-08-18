@@ -385,8 +385,8 @@ fi
 # taken verbatim from overlay-dozenos-build/expected-residuals.txt) -- must still pass.
 OVERLAY_DIR_OK="$WORK/allowlisted-overlay"
 mkdir -p "$OVERLAY_DIR_OK/docker"
-printf 'deb [signed-by=/usr/share/keyrings/dozenos-dev-archive-keyring.asc] https://packages.vyos.net/repositories/rolling rolling main\n' \
-  > "$OVERLAY_DIR_OK/docker/dozenos-dev.list"
+printf 'RUN curl -fsSL https://cdn.vyos.io/tools/syft.tar.gz | tar xz\n' \
+  > "$OVERLAY_DIR_OK/docker/Dockerfile"
 
 WORK_DIR3B="$WORK/run-allowlisted-overlay"
 if OUT3B=$(GH_STUB_MODE=seed "$SCRIPT" "$UPSTREAM_URL" --target mirror-push-test \
@@ -398,7 +398,7 @@ else
   printf '%s\n' "$OUT3B"
 fi
 
-if printf '%s\n' "$OUT3B" | grep -qF 'allowlisted (toolchain-apt)'; then
+if printf '%s\n' "$OUT3B" | grep -qF 'allowlisted (cdn-syft)'; then
   ok "the allowlisted residual is classified with its allowlist reason (toolchain-apt)"
 else
   bad "expected the allowlisted-reason classification log line"; printf '%s\n' "$OUT3B"
@@ -459,16 +459,16 @@ if [ -d "$VYOS_BUILD_LOCAL/.git" ]; then
     ok "--build-repo real-tree run has zero UNEXPECTED (unallowlisted) residuals"
   fi
 
-  # item #18d + REPOINT-AUDIT.md #6: exactly 9 deliberate non-git residuals
-  # (3 source-mirror tarball URLs + cdn.vyos.io + packages.vyos.net
-  # apt-source + the 4 pin-nonmirrored-org-refs.sh reverts: .coderabbit.yaml,
-  # 2 AGENTS.md lines, scripts/ansible-install), NOT the 6 new-files/ recipe
-  # scm_urls (those must read dozenos/* now).
+  # item #18d + REPOINT-AUDIT.md #6: exactly 8 deliberate non-git residuals
+  # (3 source-mirror tarball URLs + cdn.vyos.io + the 4
+  # pin-nonmirrored-org-refs.sh reverts: .coderabbit.yaml, 2 AGENTS.md
+  # lines, scripts/ansible-install), NOT the 6 new-files/ recipe scm_urls
+  # (those must read dozenos/* now).
   n_residual=$(printf '%s\n' "$OUT5" | grep -oE '\([0-9]+ residual vyos\)' | grep -oE '[0-9]+' || true)
-  if [ "$n_residual" = "9" ]; then
-    ok "--build-repo residual count is exactly 9 (item #18d + REPOINT-AUDIT.md #6)"
+  if [ "$n_residual" = "8" ]; then
+    ok "--build-repo residual count is exactly 8 (item #18d + REPOINT-AUDIT.md #6)"
   else
-    bad "--build-repo residual count is '$n_residual', expected 9"
+    bad "--build-repo residual count is '$n_residual', expected 8"
     printf '%s\n' "$OUT5" | grep -A10 'residual vyos'
   fi
 

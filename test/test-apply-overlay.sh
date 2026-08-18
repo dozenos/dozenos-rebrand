@@ -156,8 +156,7 @@ EOF
     printf '%s\n' "$old_block"
   } > "$t/scripts/image-build/build-dozenos-image"
 
-  # -- value-fixes/pin-toolchain-apt-source.sh targets --
-  printf 'deb https://packages.dozenos.net/repositories/rolling main\n' > "$t/docker/dozenos-dev.list"
+  # -- value-fixes/pin-toolchain-apt-source.sh target --
   printf 'FROM debian:bookworm\nRUN curl -fsSL https://cdn.dozenos.io/syft.tar.gz | tar xz\n' > "$t/docker/Dockerfile"
 
   # -- value-fixes/pin-nonmirrored-org-refs.sh targets (REPOINT-AUDIT.md #6
@@ -299,8 +298,7 @@ assert_local_state() {
 assert_both_modes_state() {
   local tree=$1 label=$2
 
-  if grep -qF 'packages.vyos.net' "$tree/docker/dozenos-dev.list" \
-     && grep -qF 'cdn.vyos.io' "$tree/docker/Dockerfile"; then
+  if grep -qF 'cdn.vyos.io' "$tree/docker/Dockerfile"; then
     ok "$label: toolchain apt-source hosts reverted (both modes)"
   else
     bad "$label: toolchain apt-source hosts not reverted"

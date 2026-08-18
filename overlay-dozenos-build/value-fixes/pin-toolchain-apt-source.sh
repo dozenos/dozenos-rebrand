@@ -1,37 +1,15 @@
 #!/usr/bin/env bash
 #
-# pin-toolchain-apt-source.sh -- revert the build-time toolchain apt-source
-# host in docker/dozenos-dev.list (and its Dockerfile comment) back to the
-# real `packages.vyos.net` (audit item #12 class -- same reasoning as
-# logic-patches/revert-source-mirror-urls.sh, applied to the dev-container
-# toolchain apt source instead of a kernel-recipe tarball fetch).
+# pin-toolchain-apt-source.sh -- revert the syft SBOM-tool download host in
+# docker/Dockerfile back to the real `cdn.vyos.io` (audit item #12 class --
+# same reasoning as logic-patches/revert-source-mirror-urls.sh: a real
+# external build-time host DozenOS does not mirror, which rename-transform's
+# four-form pass rewrites to a nonexistent dozenos host).
 #
-# WHY: rename-transform.sh's four-form pass rewrites `packages.vyos.net` to
-# `packages.dozenos.net` (nonexistent) inside docker/vyos-dev.list (renamed by
-# the transform's path pass to docker/dozenos-dev.list; the filename rename
-# itself is correct and NOT reverted here -- only the URL content is). This is
-# a real external apt repository DozenOS does not mirror yet -- there is no
-# apt-tracked DozenOS distro (image-based upgrade model, see the CI/CD plan),
-# so self-hosting this is out of scope; keep pointing at the real host until
-# that decision changes.
-#
-# Targets (two DIFFERENT real external hosts, both in docker/, both hit by
-# the same four-form substring rule):
-#   docker/dozenos-dev.list  packages.vyos.net   (apt repo, item #12)
-#   docker/Dockerfile        cdn.vyos.io         (syft SBOM-tool tarball
-#                                                 download, ~line 336-337 --
-#                                                 NOT in the original audit's
-#                                                 item #12 write-up; found
-#                                                 during #18b overlay work.
-#                                                 The live hand-edited tree
-#                                                 has NOT reverted this one
-#                                                 either -- confirmed via
-#                                                 `grep cdn.vyos.io
-#                                                 docker/Dockerfile`, still
-#                                                 present unreverted there --
-#                                                 so this is a genuinely new
-#                                                 finding, not a duplicate of
-#                                                 already-tracked work.)
+# The script's original namesake target, docker/dozenos-dev.list's
+# `packages.vyos.net` apt-repo host, was removed upstream (vyos-build
+# 35091fc, T9216, 2026-08-16: the dev container no longer consumes the VyOS
+# binary repository at all), leaving the Dockerfile host as the sole target.
 #
 # Idempotent: no-op if already reverted. Fails loudly if neither the expected
 # transformed nor already-reverted string is found in a target file (drift).
@@ -52,7 +30,6 @@ DOCKER="$TARGET/docker"
 
 # entries: "relative-file|dozenos-form|vyos-form"
 ENTRIES=(
-  "dozenos-dev.list|packages.dozenos.net|packages.vyos.net"
   "Dockerfile|cdn.dozenos.io|cdn.vyos.io"
 )
 

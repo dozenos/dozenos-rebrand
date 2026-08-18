@@ -26,7 +26,6 @@
 # line-number drift (a future upstream edit that moves these lines around
 # does not require updating this file). reason is always exactly one of:
 #   source-mirror     -- reverted 3rd-party binary/firmware tarball fetch
-#   toolchain-apt      -- reverted apt-source host for the dev-container image
 #   cdn-syft            -- reverted syft SBOM-tool download host
 #   nonmirrored-org-ref -- reverted github.com/vyos/* ref to a repo with no
 #                          dozenos org mirror and no mirror plan
@@ -35,7 +34,7 @@
 # table, overlay-dozenos-build/MANIFEST.md ("Repro test" + the pin-*.sh rows), and each
 # revert script's own header comment.
 
-# --- dozenos-build (mirror-push.sh --build-repo) -- 8 entries, 9 residual
+# --- dozenos-build (mirror-push.sh --build-repo) -- 7 entries, 8 residual
 #     lines (AGENTS.md contributes 2 lines matched by 1 entry). Reverted by
 #     overlay-dozenos-build/logic-patches/revert-source-mirror-urls.sh,
 #     overlay-dozenos-build/value-fixes/pin-toolchain-apt-source.sh, and
@@ -44,7 +43,6 @@ scripts/package-build/linux-kernel/build-realtek-r8152.sh|packages.vyos.net/sour
 scripts/package-build/linux-kernel/build-realtek-r8126.sh|packages.vyos.net/source-mirror|source-mirror
 scripts/package-build/linux-kernel/build-intel-qat.sh|packages.vyos.net/source-mirror|source-mirror
 docker/Dockerfile|cdn.vyos.io|cdn-syft
-docker/dozenos-dev.list|packages.vyos.net|toolchain-apt
 .coderabbit.yaml|github.com/vyos/coderabbit|nonmirrored-org-ref
 AGENTS.md|vyos/vyos-live-build|nonmirrored-org-ref
 scripts/ansible-install|github.com/vyos/vyos.vyos|nonmirrored-org-ref

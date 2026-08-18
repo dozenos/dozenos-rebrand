@@ -393,12 +393,12 @@ if [ "$BUILD_REPO" -eq 1 ]; then
   # the residual set for this target is small and known: only the
   # genuinely-not-mirrored, non-git-host/non-mirrored-org build-time pointers
   # remain (the reverted packages.vyos.net/source-mirror tarball fetches x3,
-  # the reverted packages.vyos.net / cdn.vyos.io toolchain apt hosts, and 4
-  # more from REPOINT-AUDIT.md #6's pin-nonmirrored-org-refs.sh: the
-  # .coderabbit.yaml ref, 2 AGENTS.md lines, and scripts/ansible-install)
-  # -- 9 total. Neither the 14 git scm_urls nor the 6 new-files/ ones are
-  # residual vyos in --ci mode any more.
-  log "NOTE: apply-overlay.sh --ci leaves mirrored git scm_urls at dozenos/*; residuals expected are only the 9 non-git-host/non-mirrored-org build-time pointers in $EXPECTED_RESIDUALS (--build-repo implies --allow-residuals, bounded by that allowlist)"
+  # the reverted cdn.vyos.io syft download host, and 4 more from
+  # REPOINT-AUDIT.md #6's pin-nonmirrored-org-refs.sh: the .coderabbit.yaml
+  # ref, 2 AGENTS.md lines, and scripts/ansible-install) -- 8 total. Neither
+  # the 14 git scm_urls nor the 6 new-files/ ones are residual vyos in --ci
+  # mode any more.
+  log "NOTE: apply-overlay.sh --ci leaves mirrored git scm_urls at dozenos/*; residuals expected are only the 8 non-git-host/non-mirrored-org build-time pointers in $EXPECTED_RESIDUALS (--build-repo implies --allow-residuals, bounded by that allowlist)"
   "$APPLY_OVERLAY" --ci "$CLONE_DIR"
 else
   log "4/7 --build-repo not set, skipping apply-overlay"
