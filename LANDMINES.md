@@ -112,3 +112,51 @@ The transform renames files **on disk only** (it never runs `git`). Build steps 
   monotonically-increasing version for branch-tracked packages (REBRAND-PLAN
   §3d gotcha 1). Idempotent (guarded by a `+git` check). Off by default; the
   source-package rename happens regardless.
+
+## `test-ci-qcow2` can never pass — cloud-init vs. hw-id interface naming (found 2026-08-25, NOT a rebrand defect)
+
+`make test-ci-qcow2` (upstream `vyos-build` Makefile) boots a cloud-init qcow2
+and asserts `192.0.2.1/25` lands on `eth0`. On DozenOS it fails, and the
+symptom **looks** like a rebrand bug — the guest comes up with `eth1`..`eth8`
+and no `eth0` at all:
+
+```
+dozenos-router: interface 'eth0' still has no hw-id configured after this
+                boot's naming pass - bind it manually [...]
+dozenos-config: Configuration error
+Device "eth0" does not exist.
+```
+
+It is not. `src/system/dozenos-net-name-resolve.py` is **byte-identical to
+upstream's `vyos-net-name-resolve.py`** apart from the added copyright line —
+verified by diffing the two with the four forms substituted back. The failure
+is an upstream-vs-upstream incompatibility we merely inherit:
+
+- `check-qemu-install --cloud-init` seeds `set interfaces ethernet eth0
+  address '<ip>'`. `cc_dozenos_userdata` applies it as text through
+  `ConfigTree`, so the node lands in `config.boot` **with no `hw-id` leaf** —
+  cloud-init has no way to know which NIC that is.
+- The naming pass treats such a node as *pending*: its name is **reserved** so
+  no NIC may claim it, and it is bound to hardware only when **exactly one**
+  unconfigured NIC exists that boot. The rule is deliberately conservative —
+  guessing would bind one port's addresses to a different wire.
+- The test VM has **eight** NICs (virtio ×4, e1000e ×2, vmxnet3 ×2). One
+  pending node vs. eight candidates is ambiguous, so nothing binds: all eight
+  NICs bootstrap around the reserved name into `eth1`..`eth8`, the `eth0` node
+  stays orphaned, config load errors, and the test times out.
+
+The target arrived with T8111 (`vyos-build` `8e065320`), which **touched no
+workflow** — upstream has never run it in CI. The conservative naming rule
+arrived later, with T3871. Single-NIC cloud images (our `aws` flavor) are
+1-vs-1 and bind fine, which is why only this test trips.
+
+**Do not "fix" it by giving the qcow2 a default `config.boot` that carries
+`eth0`.** That node is equally `hw-id`-less, so it is still 1-vs-8 ambiguous
+and fails identically. Only a single-NIC test VM (the NIC count is hardcoded
+in `check-qemu-install`'s `get_qemu_cmd()`) or an upstream change would make
+it pass.
+
+Until then the leg stays in `nightly.yml`'s `test-image` matrix but is
+**advisory** — listed in that job's `ADVISORY_TARGETS`, the only legs allowed
+not to gate the Release publish. Re-check on upstream syncs that touch the
+naming code or `check-qemu-install`.
