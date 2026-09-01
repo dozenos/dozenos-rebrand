@@ -405,13 +405,16 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# Run 4 (item #18d, count updated by REPOINT-AUDIT.md #6): --build-repo must
+# Run 4 (item #18d, count updated by REPOINT-AUDIT.md #6 and
+# INCIDENT-2026-08-31-frr-netfilter-mk-build-deps.md): --build-repo must
 # IMPLY --allow-residuals -- the deliberate, small, known residual set for
-# the dozenos-build target (9 non-git build-time pointers: the original 5
-# post-#18d, plus 4 more from REPOINT-AUDIT.md #6's
-# pin-nonmirrored-org-refs.sh reverts -- see that script's header) must not
-# cause verify to refuse the push, WITHOUT the caller separately passing
-# --allow-residuals. Driven
+# the dozenos-build target (10 non-git build-time residual LINES: 8 from the
+# original 5 post-#18d entries + REPOINT-AUDIT.md #6's 4
+# pin-nonmirrored-org-refs.sh reverts, plus 2 new lines from the
+# new-files/docker/vyos-dev.list apt-source restore -- its own apt-source
+# line, and the Dockerfile COPY line naming it -- see each script's
+# header) must not cause verify to refuse the push, WITHOUT the caller
+# separately passing --allow-residuals. Driven
 # against the real local vyos-build checkout via a file:// URL (a plain local
 # filesystem clone -- not a network host) so the fixture exercises the actual
 # apply-overlay.sh --ci + new-files/ overlay content
@@ -459,16 +462,18 @@ if [ -d "$VYOS_BUILD_LOCAL/.git" ]; then
     ok "--build-repo real-tree run has zero UNEXPECTED (unallowlisted) residuals"
   fi
 
-  # item #18d + REPOINT-AUDIT.md #6: exactly 8 deliberate non-git residuals
-  # (3 source-mirror tarball URLs + cdn.vyos.io + the 4
-  # pin-nonmirrored-org-refs.sh reverts: .coderabbit.yaml, 2 AGENTS.md
-  # lines, scripts/ansible-install), NOT the 6 new-files/ recipe scm_urls
-  # (those must read dozenos/* now).
+  # item #18d + REPOINT-AUDIT.md #6 + INCIDENT-2026-08-31: exactly 10
+  # deliberate non-git residuals (3 source-mirror tarball URLs +
+  # cdn.vyos.io + the 4 pin-nonmirrored-org-refs.sh reverts:
+  # .coderabbit.yaml, 2 AGENTS.md lines, scripts/ansible-install + 2
+  # new-files/docker/vyos-dev.list apt-source restore lines: its own
+  # apt-source line + the Dockerfile COPY line naming it), NOT the 6
+  # new-files/ recipe scm_urls (those must read dozenos/* now).
   n_residual=$(printf '%s\n' "$OUT5" | grep -oE '\([0-9]+ residual vyos\)' | grep -oE '[0-9]+' || true)
-  if [ "$n_residual" = "8" ]; then
-    ok "--build-repo residual count is exactly 8 (item #18d + REPOINT-AUDIT.md #6)"
+  if [ "$n_residual" = "10" ]; then
+    ok "--build-repo residual count is exactly 10 (item #18d + REPOINT-AUDIT.md #6 + INCIDENT-2026-08-31)"
   else
-    bad "--build-repo residual count is '$n_residual', expected 8"
+    bad "--build-repo residual count is '$n_residual', expected 10"
     printf '%s\n' "$OUT5" | grep -A10 'residual vyos'
   fi
 

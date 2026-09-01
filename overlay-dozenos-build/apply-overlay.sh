@@ -16,8 +16,13 @@
 #                        repo-relative paths and symlinks. Runs in BOTH modes.
 #   2. logic-patches/ -- revert the 3 external source-mirror tarball fetch
 #                        URLs (item #4-of-this-overlay / audit item shown in
-#                        MANIFEST.md), and apply the vyos_mirror/dozenos_mirror
-#                        empty-guard (audit item #13) to build-dozenos-image.
+#                        MANIFEST.md), apply the vyos_mirror/dozenos_mirror
+#                        empty-guard (audit item #13) to build-dozenos-image,
+#                        and add the Dockerfile COPY for
+#                        new-files/docker/vyos-dev.list (restores the real
+#                        packages.vyos.net apt source dozenos-dev.list lost
+#                        on 2026-08-19 -- see
+#                        INCIDENT-2026-08-31-frr-netfilter-mk-build-deps.md).
 #                        Runs in BOTH modes -- these are non-git hosts
 #                        (`packages.vyos.net`) that are genuinely not
 #                        mirrored, and a logic guard, neither of which has
@@ -190,6 +195,7 @@ echo "== apply-overlay: step 2/3 -- logic-patches/ (both modes) =="
 "$LOGIC_PATCHES/revert-source-mirror-urls.sh" "$TARGET"
 "$LOGIC_PATCHES/vyos-mirror-guard.sh" "$TARGET"
 "$LOGIC_PATCHES/dockerfile-go-path.sh" "$TARGET"
+"$LOGIC_PATCHES/dockerfile-vyos-dev-list.sh" "$TARGET"
 
 echo "== apply-overlay: step 3/3 -- value-fixes/ =="
 if [ "$MODE" = "local" ]; then

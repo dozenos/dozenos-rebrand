@@ -29,16 +29,20 @@
 #   cdn-syft            -- reverted syft SBOM-tool download host
 #   nonmirrored-org-ref -- reverted github.com/vyos/* ref to a repo with no
 #                          dozenos org mirror and no mirror plan
+#   new-file-source-mirror -- a brand-new new-files/ file (bypasses
+#                          rename-transform.sh entirely) that deliberately
+#                          ships a real packages.vyos.net apt-source line
 #
 # Full rationale for each entry: SWEEP-dozenos-build.md's classification
 # table, overlay-dozenos-build/MANIFEST.md ("Repro test" + the pin-*.sh rows), and each
 # revert script's own header comment.
 
-# --- dozenos-build (mirror-push.sh --build-repo) -- 7 entries, 8 residual
+# --- dozenos-build (mirror-push.sh --build-repo) -- 9 entries, 10 residual
 #     lines (AGENTS.md contributes 2 lines matched by 1 entry). Reverted by
 #     overlay-dozenos-build/logic-patches/revert-source-mirror-urls.sh,
-#     overlay-dozenos-build/value-fixes/pin-toolchain-apt-source.sh, and
-#     overlay-dozenos-build/value-fixes/pin-nonmirrored-org-refs.sh. ------------------------
+#     overlay-dozenos-build/value-fixes/pin-toolchain-apt-source.sh,
+#     overlay-dozenos-build/value-fixes/pin-nonmirrored-org-refs.sh, and
+#     overlay-dozenos-build/logic-patches/dockerfile-vyos-dev-list.sh. ------
 scripts/package-build/linux-kernel/build-realtek-r8152.sh|packages.vyos.net/source-mirror|source-mirror
 scripts/package-build/linux-kernel/build-realtek-r8126.sh|packages.vyos.net/source-mirror|source-mirror
 scripts/package-build/linux-kernel/build-intel-qat.sh|packages.vyos.net/source-mirror|source-mirror
@@ -46,6 +50,17 @@ docker/Dockerfile|cdn.vyos.io|cdn-syft
 .coderabbit.yaml|github.com/vyos/coderabbit|nonmirrored-org-ref
 AGENTS.md|vyos/vyos-live-build|nonmirrored-org-ref
 scripts/ansible-install|github.com/vyos/vyos.vyos|nonmirrored-org-ref
+
+# --- docker/vyos-dev.list (new-files/, INCIDENT-2026-08-31): restores the
+#     real packages.vyos.net apt source docker/dozenos-dev.list lost to the
+#     2026-08-19 rebrand -- installed by
+#     overlay-dozenos-build/logic-patches/dockerfile-vyos-dev-list.sh
+#     alongside (not instead of) the still-rebranded dozenos-dev.list. Two
+#     residual lines: the new file's own apt-source line, and the Dockerfile
+#     COPY line dockerfile-vyos-dev-list.sh inserts (its filename argument
+#     literally contains "vyos"). ------------------------------------------
+docker/vyos-dev.list|packages.vyos.net|new-file-source-mirror
+docker/Dockerfile|COPY vyos-dev.list|new-file-source-mirror
 
 # --- dozenos-1x (mirror-push.sh --overlay overlay-dozenos-1x
 #     --allow-residuals) -- 1 additional entry (its .coderabbit.yaml is
