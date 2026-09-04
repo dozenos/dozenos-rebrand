@@ -1,0 +1,21 @@
+# Vultr cloud image.
+#
+# Targets Vultr. The ISO boots as a live system on Vultr and gets its
+# config from Vultr user-data via cloud-init's Vultr datasource. The
+# qcow2 is for snapshot import.
+
+image_format = ["iso", "qcow2"]
+
+disk_size = 4
+image_opts = "-c"
+
+packages = ["cloud-init"]
+
+[boot_settings]
+console_type = "tty"
+console_num = "0"
+
+[[includes_chroot]]
+path = "etc/cloud/cloud.cfg.d/90_dpkg.cfg"
+data = """datasource_list: [ Vultr, None ]
+"""

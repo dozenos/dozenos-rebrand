@@ -1,0 +1,10 @@
+# Vultr cloud image.
+#
+# Upgrade ISO for a system installed from flavors/fresh-install/vultr.toml.
+# Config still comes from Vultr user-data via cloud-init's Vultr datasource.
+
+image_format = "iso"
+
+[boot_settings]
+console_type = "tty"
+console_num = "0"
