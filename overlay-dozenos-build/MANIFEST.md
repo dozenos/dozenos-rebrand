@@ -125,9 +125,17 @@ a vyos-1x-repo concern (what vyos-1x's own source looks like).
 
 ## new-files/ — LANDED (19 files/symlinks across 7 paths)
 
+**Correction (vyatta-bash dropped, followed upstream):** vyos-build commit
+`0505dc09` added its own `scripts/package-build/vyatta-bash/package.toml`
+(bash 5.2.37 from `salsa.debian.org`), colliding with this overlay's copy in
+self-sync run 34682103971. DozenOS follows upstream: the
+`scripts/package-build/vyatta-bash/{package.toml,build.py,.gitignore}` row
+below and its `pin-helper-scm-urls.sh` entry are removed; the table row is
+left below for historical reference only.
+
 | Path under `new-files/` | Source | Audit item | Note |
 |---|---|---|---|
-| `scripts/package-build/vyatta-bash/{package.toml,build.py,.gitignore}` | live tree, verbatim | #5 | `.gitignore` added (live tree lacked one — see "Fixes found" below) |
+| `scripts/package-build/vyatta-bash/{package.toml,build.py,.gitignore}` | live tree, verbatim | #5 | **REMOVED, followed upstream (see correction above)** |
 | `scripts/package-build/vyatta-biosdevname/{package.toml,build.py,.gitignore}` | live tree, verbatim | #5 | same |
 | `scripts/package-build/vyatta-cfg/{package.toml,build.py,.gitignore}` | live tree, verbatim | #5 | same |
 | `scripts/package-build/ipaddrcheck/{package.toml,build.py,.gitignore}` | live tree, verbatim | #5 | same |

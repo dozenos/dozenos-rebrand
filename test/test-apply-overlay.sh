@@ -231,11 +231,11 @@ assert_ci_state() {
     ok "$label: no reverted (github.com/vyos/*) scm_urls under --ci"
   fi
 
-  # item #18d: the 6 new-files/ recipes ship pre-pointed at github.com/dozenos/*
+  # item #18d: the 5 new-files/ recipes ship pre-pointed at github.com/dozenos/*
   # and bypass rename-transform.sh entirely; they must stay that way under --ci.
+  # (vyatta-bash dropped -- followed upstream, vyos-build 0505dc09.)
   local newf_ok=1
   for pair in \
-    "vyatta-bash:https://github.com/dozenos/vyatta-bash.git" \
     "vyatta-biosdevname:https://github.com/dozenos/vyatta-biosdevname.git" \
     "vyatta-cfg:https://github.com/dozenos/vyatta-cfg.git" \
     "ipaddrcheck:https://github.com/dozenos/ipaddrcheck.git" \
@@ -246,10 +246,10 @@ assert_ci_state() {
     grep -qF "$want" "$tree/scripts/package-build/$dir/package.toml" || newf_ok=0
   done
   if [ "$newf_ok" -eq 1 ]; then
-    ok "$label: all 6 new-files/ recipe scm_urls stay at github.com/dozenos/* (--ci, item #18d)"
+    ok "$label: all 5 new-files/ recipe scm_urls stay at github.com/dozenos/* (--ci, item #18d)"
   else
     bad "$label: a new-files/ recipe scm_url is not at github.com/dozenos/*"
-    grep -H scm_url "$tree"/scripts/package-build/{vyatta-bash,vyatta-biosdevname,vyatta-cfg,ipaddrcheck,hvinfo,dozenos-http-api-tools}/package.toml
+    grep -H scm_url "$tree"/scripts/package-build/{vyatta-biosdevname,vyatta-cfg,ipaddrcheck,hvinfo,dozenos-http-api-tools}/package.toml
   fi
 }
 
@@ -273,11 +273,11 @@ assert_local_state() {
     bad "$label: tacacs blocks not fully reverted"; cat "$tree/scripts/package-build/tacacs/package.toml"
   fi
 
-  # item #18d: the 6 new-files/ recipes must revert to the real upstream
+  # item #18d: the 5 new-files/ recipes must revert to the real upstream
   # github.com/vyos/* under --local (dozenos-http-api-tools also renames).
+  # (vyatta-bash dropped -- followed upstream, vyos-build 0505dc09.)
   local newf_ok=1
   for pair in \
-    "vyatta-bash:https://github.com/vyos/vyatta-bash.git" \
     "vyatta-biosdevname:https://github.com/vyos/vyatta-biosdevname.git" \
     "vyatta-cfg:https://github.com/vyos/vyatta-cfg.git" \
     "ipaddrcheck:https://github.com/vyos/ipaddrcheck.git" \
@@ -288,10 +288,10 @@ assert_local_state() {
     grep -qF "$want" "$tree/scripts/package-build/$dir/package.toml" || newf_ok=0
   done
   if [ "$newf_ok" -eq 1 ]; then
-    ok "$label: all 6 new-files/ recipe scm_urls reverted to github.com/vyos/* (--local, item #18d)"
+    ok "$label: all 5 new-files/ recipe scm_urls reverted to github.com/vyos/* (--local, item #18d)"
   else
     bad "$label: a new-files/ recipe scm_url is not reverted to github.com/vyos/*"
-    grep -H scm_url "$tree"/scripts/package-build/{vyatta-bash,vyatta-biosdevname,vyatta-cfg,ipaddrcheck,hvinfo,dozenos-http-api-tools}/package.toml
+    grep -H scm_url "$tree"/scripts/package-build/{vyatta-biosdevname,vyatta-cfg,ipaddrcheck,hvinfo,dozenos-http-api-tools}/package.toml
   fi
 }
 

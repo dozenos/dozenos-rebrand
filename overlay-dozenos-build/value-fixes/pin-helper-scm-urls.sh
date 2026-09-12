@@ -27,9 +27,10 @@
 #   - dozenos-1x (post-rename path for vyos-1x; `name` stays "dozenos-1x" --
 #     that IS the correct future package name -- only scm_url is reverted)
 #
-# ALSO covered here: the 6 NEW recipes shipped via overlay-dozenos-build/new-files/
-# (vyatta-bash, vyatta-biosdevname, vyatta-cfg, ipaddrcheck, hvinfo,
-# dozenos-http-api-tools) -- see overlay-dozenos-build/MANIFEST.md. Those recipes don't
+# ALSO covered here: the 5 NEW recipes shipped via overlay-dozenos-build/new-files/
+# (vyatta-biosdevname, vyatta-cfg, ipaddrcheck, hvinfo,
+# dozenos-http-api-tools) -- see overlay-dozenos-build/MANIFEST.md. vyatta-bash
+# dropped (followed upstream, vyos-build 0505dc09). Those recipes don't
 # exist upstream, so they bypass rename-transform.sh entirely (new-files/ is
 # copied in AFTER rename-transform.sh already ran); their package.toml files
 # ship scm_url already pointed at github.com/dozenos/* (their mirrors exist),
@@ -67,7 +68,6 @@ ENTRIES=(
   "tacacs/package.toml|https://github.com/dozenos/libnss-tacplus.git|https://github.com/vyos/libnss-tacplus.git"
   "vpp/package.toml|https://github.com/dozenos/dozenos-vpp-patches|https://github.com/vyos/vyos-vpp-patches"
   "dozenos-1x/package.toml|https://github.com/dozenos/dozenos-1x.git|https://github.com/vyos/vyos-1x.git"
-  "vyatta-bash/package.toml|https://github.com/dozenos/vyatta-bash.git|https://github.com/vyos/vyatta-bash.git"
   "vyatta-biosdevname/package.toml|https://github.com/dozenos/vyatta-biosdevname.git|https://github.com/vyos/vyatta-biosdevname.git"
   "vyatta-cfg/package.toml|https://github.com/dozenos/vyatta-cfg.git|https://github.com/vyos/vyatta-cfg.git"
   "ipaddrcheck/package.toml|https://github.com/dozenos/ipaddrcheck.git|https://github.com/vyos/ipaddrcheck.git"

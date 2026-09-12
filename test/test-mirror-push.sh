@@ -467,8 +467,9 @@ if [ -d "$VYOS_BUILD_LOCAL/.git" ]; then
   # cdn.vyos.io + the 4 pin-nonmirrored-org-refs.sh reverts:
   # .coderabbit.yaml, 2 AGENTS.md lines, scripts/ansible-install + 2
   # new-files/docker/vyos-dev.list apt-source restore lines: its own
-  # apt-source line + the Dockerfile COPY line naming it), NOT the 6
-  # new-files/ recipe scm_urls (those must read dozenos/* now).
+  # apt-source line + the Dockerfile COPY line naming it), NOT the 5
+  # new-files/ recipe scm_urls (those must read dozenos/* now; vyatta-bash
+  # dropped from new-files/ -- followed upstream, vyos-build 0505dc09).
   n_residual=$(printf '%s\n' "$OUT5" | grep -oE '\([0-9]+ residual vyos\)' | grep -oE '[0-9]+' || true)
   if [ "$n_residual" = "10" ]; then
     ok "--build-repo residual count is exactly 10 (item #18d + REPOINT-AUDIT.md #6 + INCIDENT-2026-08-31)"
@@ -477,10 +478,10 @@ if [ -d "$VYOS_BUILD_LOCAL/.git" ]; then
     printf '%s\n' "$OUT5" | grep -A10 'residual vyos'
   fi
 
-  if printf '%s\n' "$OUT5" | grep -qE 'scripts/package-build/(vyatta-bash|vyatta-biosdevname|vyatta-cfg|ipaddrcheck|hvinfo|dozenos-http-api-tools)/package.toml'; then
+  if printf '%s\n' "$OUT5" | grep -qE 'scripts/package-build/(vyatta-biosdevname|vyatta-cfg|ipaddrcheck|hvinfo|dozenos-http-api-tools)/package.toml'; then
     bad "a new-files/ recipe scm_url showed up as residual -- item #18d regression"
   else
-    ok "none of the 6 new-files/ recipe scm_urls are residual (item #18d)"
+    ok "none of the 5 new-files/ recipe scm_urls are residual (item #18d)"
   fi
 
   # ---------------------------------------------------------------------- #

@@ -1,5 +1,0 @@
-[[packages]]
-name = "vyatta-bash"
-commit_id = "rolling"
-scm_url = "https://github.com/dozenos/vyatta-bash.git"
-build_cmd = "dpkg-buildpackage -us -uc -tc -b"

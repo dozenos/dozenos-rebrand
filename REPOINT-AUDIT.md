@@ -1,5 +1,13 @@
 # REPOINT-AUDIT.md — item #6: repoint external refs + rename recipe dirs
 
+**Correction (post-audit, vyatta-bash dropped):** vyos-build commit
+`0505dc09` shipped its own `scripts/package-build/vyatta-bash/package.toml`,
+colliding with the `vyatta-bash` new-files/ overlay this audit counted below
+(self-sync run 34682103971). DozenOS follows upstream for `vyatta-bash`; its
+`github.com/dozenos/vyatta-bash.git` row and mirror-existence check below are
+stale as of this correction — the counts (14/16/17) reflect the audit's
+original snapshot, not the current tracked set.
+
 Because mode-B `--ci` already repoints external refs automatically (the
 four-form transform rewrites `github.com/vyos/*` → `github.com/dozenos/*` in
 every `scm_url`/opam pin, and the path-rename pass renames every recipe dir),
