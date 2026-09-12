@@ -187,6 +187,7 @@
     "telegraf": [],
     "udp-broadcast-relay": [],
     "unionfs-fuse": [],
+    "vyatta-bash": [],
     "vyatta-biosdevname": [],
     "vyatta-cfg": [],
     "waagent": [],
@@ -731,6 +732,7 @@
       }
     },
     "unmappable": {
+      "vyatta-bash": "The recipe builds bash from Debian source since vyos-build 0505dc09 and has no dozenos mirror, so it never dispatches.",
       "squid": "No scripts/package-build/squid directory exists on the reproduced mode-B tree (mirror-push.sh <local vyos-build> --target dozenos-build --build-repo --dry-run) nor the local vyos-build sibling checkout -- confirmed via `find scripts/package-build -maxdepth 1 -type d` (47 dirs total, squid absent) and via the local checkout's own build/cache/packages.chroot/squid_5.7-2+deb12u5_amd64.deb (a plain Debian-apt-cached .deb, never produced by a local recipe build). squid is genuinely never rebuilt by DozenOS and has no dozenos/* mirror, so 'squid' should never actually appear as a real client_payload.package in practice; kept as a graph leaf (zero dependents, unchanged) but explicitly flagged here rather than assigned an invented recipe. dep-graph/nodes-to-build-units.sh treats any node found here (or any node with no entry in 'node_to_unit' and no matching real recipe/kernel-block by identity) as UNMAPPABLE: it is dropped from the emitted build-unit matrix with a warning on stderr, never crashes, and never invents a `cd` target."
     },
     "provenance": {
