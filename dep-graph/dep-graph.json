@@ -187,7 +187,6 @@
     "telegraf": [],
     "udp-broadcast-relay": [],
     "unionfs-fuse": [],
-    "vyatta-bash": [],
     "vyatta-biosdevname": [],
     "vyatta-cfg": [],
     "waagent": [],
@@ -697,10 +696,6 @@
       "vpp": {
         "recipe": "linux-kernel",
         "kernel_block": "accel-ppp-ng"
-      },
-      "vyatta-bash": {
-        "recipe": "vyatta-bash",
-        "kernel_block": null
       },
       "vyatta-biosdevname": {
         "recipe": "vyatta-biosdevname",
