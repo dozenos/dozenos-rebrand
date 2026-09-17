@@ -160,3 +160,45 @@ Until then the leg stays in `nightly.yml`'s `test-image` matrix but is
 **advisory** — listed in that job's `ADVISORY_TARGETS`, the only legs allowed
 not to gate the Release publish. Re-check on upstream syncs that touch the
 naming code or `check-qemu-install`.
+
+### Update 2026-09-17
+
+Re-verified. `Makefile` target `test-ci-qcow2`, `scripts/check-qemu-install`,
+`cc_*_userdata.py`, and `*-net-name-resolve.py` differ from upstream only by
+the name transform. No DozenOS-side divergence.
+
+No public upstream CI runs this target. `vyos/vyos-nightly-build` has been a
+placeholder since 2026-05-31 (only `cla-check.yml`; the real build runs in
+private infrastructure). `vyos/vyos-1x` `package-smoketest.yml` runs exactly
+these targets, from `.github/config/smoketest-branches.json`:
+`test-no-interfaces-no-vpp`, `test-vpp`, `test-interfaces`, `testc`,
+`testcvpp`, `testraid`, `testtpm`. An org-wide code search finds "cloud-init"
+in no `.yml` file, and `check-qemu-install` in no workflow.
+
+Origin of the target: `vyos-build` PR #1083 (T8111, commit `8e065320`, merged
+2025-12-29). The only known pass is a manual result pasted in that PR: `eth0`
+with `192.0.2.1/25` and `2001:db8::1/64`. The paste shows only `eth0`; the NIC
+count of that run is not verified.
+
+Probable regression point (inference, not reproduced): `vyos-1x` PR #5350
+"boot: T3871: rework interface renaming and ordering", merged 2026-08-14. It
+introduced the single naming pass and the message "still has no hw-id
+configured after this boot's naming pass". The landmine was found on
+2026-08-25, 11 days later.
+
+Watch item: `vyos-1x` PR #5479 "T3871: bind interface names to hardware slots
+instead of hw-id" is open. It removes the `hw-id` node. When it merges, run
+`test-ci-qcow2` again. If it passes, remove the target from
+`ADVISORY_TARGETS` in `dozenos-nightly-build` `nightly.yml`.
+
+Open point: the same file has `compute_bootstrap_plan()`, which names all
+unconfigured NICs by PCIe distance when `config.boot` references none. Nobody
+traced why the cloud-init-written `eth0` node takes the pending-node path
+(`if len(nodes) == 1 and len(cands) == 1:`) and not this path.
+
+Visible symptom in Actions: the job is green but carries a failure
+annotation "Process completed with exit code 2", because the step uses
+`continue-on-error`.
+
+Decision 2026-09-17: keep the target advisory. The user decided not to
+report upstream.
