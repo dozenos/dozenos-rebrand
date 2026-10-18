@@ -26,6 +26,9 @@ its own upstream moved and re-syncing itself. This is intentional: it scales
 to however many mirrors DozenOS ends up with, needs no additional
 infrastructure beyond what every mirror already has (its own Actions), and
 one mirror's sync failing cannot block or slow down any other mirror's sync.
+The one central piece is a keepalive: `rebake-mirrors.yml` re-enables and
+dispatches every mirror's `sync.yml` weekly (§4b). It does not sync anything
+itself.
 
 ## 2. Mechanism: template + generation, not hand-authored per repo
 
@@ -218,6 +221,52 @@ this toolkit's `dozenos-rebrand/*` scripts exist to prevent. Instead:
    `dozenos-nightly-build` instead — the same event
    `rebuild-dispatch.yml`'s trigger-iso job sends after every incremental
    package rebuild; the image workflow's own change-gate dedups.
+
+## 4b. 60-day inactivity auto-disable and the central keepalive
+
+GitHub disables a `schedule` workflow after 60 days without repository
+activity. The workflow state becomes `disabled_inactivity`. A disabled
+workflow also rejects `workflow_dispatch`. A mirror's `sync.yml` commits
+only when its upstream changes. A mirror with a quiet upstream therefore
+creates no activity, and GitHub stops its daily sync. When the upstream
+moves again, the mirror stays stale.
+
+**Incident 2026-10-18.** Re-bake run 39128068328 failed. It could not
+dispatch 10 of 21 mirrors: `hvinfo`, `ipaddrcheck`, `libnss-tacplus`,
+`libpam-radius-auth`, `libpam-tacplus`, `libtacplus-map`, `live-boot`,
+`shim-signed`, `vyatta-biosdevname`, `vyconf`. Their last push was
+2026-08-15. Their last scheduled sync ran 2026-10-14, 60 days later. The
+09-12 re-bake of the same list had succeeded. The 11 mirrors with recent
+upstream changes stayed active.
+
+**Mechanism.** `rebake-mirrors.yml` in this repo does the keepalive:
+
+- Before each dispatch, it reads the state of the mirror's `sync.yml`. If the
+  state is not `active`, it calls `gh workflow enable` (REST
+  `PUT /repos/{owner}/{repo}/actions/workflows/{id}/enable`). It lists every
+  re-enabled mirror in the job summary and as a `::warning::`. A re-bake is
+  thus self-healing.
+- It runs on a weekly `schedule` too (`41 9 * * 4`, Thursday 09:41 UTC). This
+  is clear of the mirrors' daily `17 3 * * *`, `build-docker-image.yml`'s
+  `0 2 * * 1` and the nightly heartbeat `17 20 * * 1`. `dozenos-rebrand` gets
+  regular commits, so this central cron is not auto-disabled itself.
+- The token is the org App token minted without a `repositories:` filter. It
+  carries the App's **Actions: Read and write** permission, which the enable
+  endpoint needs (`CI-SECRETS.md` §4).
+
+**Trade-off.** A dispatch creates no commit in the mirror. GitHub can still
+set a quiet mirror's own schedule to `disabled_inactivity` after 60 days.
+GitHub does not document whether the enable call resets the inactivity
+timer, so this design does not depend on it. The worst case is: the mirror's
+daily cron stops, the weekly central run re-enables it within 7 days, and
+the central dispatch syncs it in the same run. A quiet mirror is thus at
+most one week behind its upstream.
+
+**Not done: a self-enable step in `sync.yml.template`.** It would need an
+extra token with Actions write on each mirror. It helps only if the enable
+call resets the timer, which is undocumented. A disabled `sync.yml` cannot
+run that step, so it cannot recover a mirror that is already disabled. The
+central keepalive covers all three cases.
 
 ## 5. `UPSTREAM_URL` variable contract
 

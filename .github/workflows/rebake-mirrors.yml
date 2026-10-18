@@ -1,4 +1,4 @@
-# Re-bake every dozenos/* mirror when this toolkit changes.
+# Re-bake every dozenos/* mirror when this toolkit changes, and weekly (SYNC.md §4b).
 #
 # A mirror's content is a FUNCTION of (upstream tree, this toolkit). Each
 # mirror's own sync.yml checks out dozenos-rebrand@main at run time, so a
@@ -49,6 +49,8 @@ on:
         description: 'Re-bake only this mirror (repo name). Blank = the whole fleet.'
         required: false
         type: string
+  schedule:
+    - cron: '41 9 * * 4'
 
 # One re-bake at a time: two concurrent fleet passes would have every mirror
 # syncing twice over. Never cancel one in flight -- a half-baked fleet is worse
@@ -67,7 +69,7 @@ jobs:
       # Enumerating org repos and starting their workflows is a cross-repo
       # operation. No `repositories:` filter: the point is covering the whole
       # mirror set without a hand-kept list (CI-SECRETS.md section 4).
-      - name: Mint GitHub App token (enumerate + dispatch)
+      - name: Mint GitHub App token (enumerate + enable + dispatch)
         id: app_token
         uses: actions/create-github-app-token@v3
         with:
@@ -75,7 +77,7 @@ jobs:
           private-key: ${{ secrets.BUILD_APP_PRIVATE_KEY }}
           owner: dozenos
 
-      - name: Dispatch every mirror's self-sync
+      - name: Enable and dispatch every mirror's self-sync
         env:
           GH_TOKEN: ${{ steps.app_token.outputs.token }}
           ONLY: ${{ inputs.only }}
@@ -108,7 +110,17 @@ jobs:
           # without a sync.yml must not leave the rest of the fleet stale, and
           # the summary below is the only record of which ones were skipped.
           failed=()
+          reenabled=()
           for m in "${mirrors[@]}"; do
+            state=$(gh api "repos/dozenos/$m/actions/workflows/sync.yml" --jq '.state' 2>/dev/null || echo unknown)
+            if [ "$state" != "active" ]; then
+              if gh workflow enable sync.yml -R "dozenos/$m" >/dev/null 2>&1; then
+                echo "  re-enabled ($state): $m"
+                reenabled+=("$m:$state")
+              else
+                echo "  FAILED to enable ($state): $m"
+              fi
+            fi
             if gh workflow run sync.yml -R "dozenos/$m" >/dev/null 2>&1; then
               echo "  dispatched: $m"
             else
@@ -116,6 +128,16 @@ jobs:
               failed+=("$m")
             fi
           done
+
+          {
+            echo "## Re-bake mirrors"
+            echo "- mirrors: ${#mirrors[@]}"
+            echo "- re-enabled: ${#reenabled[@]} ${reenabled[*]:-}"
+            echo "- failed to dispatch: ${#failed[@]} ${failed[*]:-}"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "${#reenabled[@]}" -gt 0 ]; then
+            echo "::warning::re-enabled ${#reenabled[@]} sync.yml workflow(s): ${reenabled[*]}"
+          fi
 
           if [ "${#failed[@]}" -gt 0 ]; then
             echo "::error::could not dispatch ${#failed[@]} mirror(s): ${failed[*]}" >&2

@@ -208,6 +208,14 @@ workflow-content changes; if this permission is ever revoked, self-syncs
 fail again whenever a workflow file's content actually changes
 (byte-identical steady-state syncs would still pass).
 
+**Actions: Read/Write is also load-bearing for the keepalive (2026-10-18):**
+`rebake-mirrors.yml` calls the workflow-enable endpoint
+(`PUT /repos/{owner}/{repo}/actions/workflows/{id}/enable`) on each mirror
+whose `sync.yml` GitHub disabled for 60-day inactivity (`SYNC.md` §4b). That
+endpoint needs the Actions write permission, as does `workflow_dispatch`.
+The token is minted without a `repositories:` filter, so it inherits the
+App's full permission set.
+
 ---
 
 ## 5. `UPSTREAM_URL` — per-repo variable (item #14 self-sync)
