@@ -54,6 +54,10 @@ smoketest container images (`OCI-SMOKETEST-IMAGES.md`).
   cannot produce. See `overlay-dozenos-build/README.md` and `overlay-dozenos-build/MANIFEST.md`.
 - **`overlay-dozenos-1x/`** -- the equivalent per-repo overlay for the
   `vyos-1x` -> `dozenos-1x` mirror.
+- **`overlay-oci-tacacs-plus/`**, **`overlay-oci-radius-server/`** -- add
+  the image build workflow to the two smoketest container-image mirrors
+  (`ghcr.io/dozenos/tacacs_plus`, `ghcr.io/dozenos/radius_server`). See
+  `OCI-SMOKETEST-IMAGES.md`.
 - **`dep-graph/`** -- `dep-graph.json` plus `resolve-rebuild-set.sh`
   (transitive-closure incremental-rebuild resolver) and
   `validate-dep-graph.sh` (graph-integrity check).

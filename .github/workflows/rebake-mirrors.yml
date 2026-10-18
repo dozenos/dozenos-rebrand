@@ -40,6 +40,8 @@ on:
       - 'sync.yml.template'
       - 'overlay-dozenos-build/**'
       - 'overlay-dozenos-1x/**'
+      - 'overlay-oci-tacacs-plus/**'
+      - 'overlay-oci-radius-server/**'
       - '.github/workflows/rebake-mirrors.yml'
   workflow_dispatch:
     inputs:

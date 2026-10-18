@@ -57,6 +57,8 @@ this toolkit's `dozenos-rebrand/*` scripts exist to prevent. Instead:
   | Build repo | `dozenos-build` | `--build-repo` |
   | Overlay repo | `dozenos-1x` | `--overlay dozenos-rebrand/overlay-dozenos-1x --allow-residuals --ensure-pin-tags` |
   | Plain mirror | `vyconf` | *(empty)* |
+| Overlay repo | `oci-tacacs-plus` | `--overlay dozenos-rebrand/overlay-oci-tacacs-plus` |
+| Overlay repo | `oci-radius-server` | `--overlay dozenos-rebrand/overlay-oci-radius-server` |
 
   ⚠️ **This table is the authoritative flag list for ANY re-push/rollout of
   a mirror**, and the only place it is written down — a mirror's flags are
