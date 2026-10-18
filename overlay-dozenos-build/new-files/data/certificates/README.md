@@ -12,18 +12,21 @@ Everything present here at build time ends up in the image at
 
 ## What ships here (and where it comes from)
 
+`<YYYY>` is the current year at build time (`date +%Y`). The signing hook
+and `scripts/check-qemu-install` derive the dev filenames from it.
+
 - The DozenOS Secure Boot kernel-signing certificate (PUBLIC,
-  `dozenos-dev-2025-linux.pem` — see "Naming reconciliation" below) is
+  `dozenos-dev-<YYYY>-linux.pem` — see "Naming reconciliation" below) is
   **not committed** to this repo. It is injected into this directory by
   `../../release/inject-mok-cert.sh` (Phase 4 / progress item #10), called
   from the CI ISO-build workflow, sourced from the org secret
   `MOK_SIGNING_CERT`.
-- The matching private signing key (`dozenos-dev-2025-linux.key`) comes
+- The matching private signing key (`dozenos-dev-<YYYY>-linux.key`) comes
   from the org secret `MOK_SIGNING_KEY`, via the same script. It is
   gitignored (see `.gitignore` = `*.key`) and is **never** committed to
   this repo, regardless of source (CI or local).
 - The DozenOS Secure Boot **MOK enrollment** certificate (PUBLIC,
-  `dozenos-dev-2025-shim.der` — see "shim-signed / MOK enrollment" below,
+  `dozenos-dev-<YYYY>-shim.der` — see "shim-signed / MOK enrollment" below,
   progress item #11) is a DER re-encoding of the exact same cert as the
   `.pem` above (`openssl x509 -outform DER`, no signing involved), derived
   by the same `inject-mok-cert.sh` call. This is the file
@@ -41,8 +44,8 @@ Everything present here at build time ends up in the image at
 `data/live-build-config/hooks/live/93-sb-sign-kernel.chroot` signs the
 kernel using:
 
-    /var/lib/shim-signed/mok/dozenos-dev-2025-linux.key
-    /var/lib/shim-signed/mok/dozenos-dev-2025-linux.pem
+    /var/lib/shim-signed/mok/dozenos-dev-<YYYY>-linux.key
+    /var/lib/shim-signed/mok/dozenos-dev-<YYYY>-linux.pem
 
 i.e. a `*-dev-*` named keypair. This directory's earlier draft assumed the
 CI-injected enrollment cert would instead be named `*-prod-*` (e.g.
@@ -56,8 +59,8 @@ would fail.
 (reads org secrets `MOK_SIGNING_KEY` / `MOK_SIGNING_CERT`, see
 `../../CI-SECRETS.md`):
 
-    data/certificates/dozenos-dev-2025-linux.key   (private, mode 0600, gitignored)
-    data/certificates/dozenos-dev-2025-linux.pem   (public,  mode 0644)
+    data/certificates/dozenos-dev-<YYYY>-linux.key   (private, mode 0600, gitignored)
+    data/certificates/dozenos-dev-<YYYY>-linux.pem   (public,  mode 0644)
 
 Because this whole directory is copied verbatim (filenames preserved) to
 `/var/lib/shim-signed/mok/`, this `.pem` is the cert `sbsign` signs
@@ -76,11 +79,11 @@ signature on the next-stage bootloader/kernel it chain-loads. The dozenos-1x
 package ships `install_mok.sh` (the `install mok` op-mode command), which
 runs:
 
-    mokutil --ignore-keyring --import /var/lib/shim-signed/mok/dozenos-dev-2025-shim.der
+    mokutil --ignore-keyring --import /var/lib/shim-signed/mok/dozenos-dev-<YYYY>-shim.der
 
 i.e. it expects a **DER**-encoded cert at that exact path/name — `mokutil
 --import` requires DER, not PEM. `inject-mok-cert.sh` derives
-`dozenos-dev-2025-shim.der` from the same `MOK_SIGNING_CERT`-sourced `.pem`
+`dozenos-dev-<YYYY>-shim.der` from the same `MOK_SIGNING_CERT`-sourced `.pem`
 above (`openssl x509 -in <.pem> -outform DER -out <.der>`), so the cert
 `mokutil` enrolls and the cert `sbsign` signs the kernel with are
 **guaranteed to be the same MOK** — just two encodings of one certificate,

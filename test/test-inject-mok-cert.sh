@@ -36,6 +36,7 @@ set -uo pipefail
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 TOOLKIT=$(dirname "$HERE")
 SCRIPT="$TOOLKIT/release/inject-mok-cert.sh"
+YEAR="$(date +%Y)"
 
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
@@ -74,7 +75,7 @@ echo "== fail-loud =="
 
 t=$(fresh_tree 1)
 if ! env -u MOK_SIGNING_KEY -u MOK_SIGNING_CERT "$SCRIPT" "$t" >/dev/null 2>&1 \
-  && [ ! -e "$t/data/certificates/dozenos-dev-2025-linux.key" ]; then
+  && [ ! -e "$t/data/certificates/dozenos-dev-${YEAR}-linux.key" ]; then
   ok "MOK_SIGNING_KEY unset: fails, writes nothing"
 else
   bad "MOK_SIGNING_KEY unset: expected non-zero exit + no file"
@@ -82,7 +83,7 @@ fi
 
 t=$(fresh_tree 2)
 if ! MOK_SIGNING_KEY="$KEY_B64" env -u MOK_SIGNING_CERT "$SCRIPT" "$t" >/dev/null 2>&1 \
-  && [ ! -e "$t/data/certificates/dozenos-dev-2025-linux.pem" ]; then
+  && [ ! -e "$t/data/certificates/dozenos-dev-${YEAR}-linux.pem" ]; then
   ok "MOK_SIGNING_CERT unset (key present): fails, writes no cert"
 else
   bad "MOK_SIGNING_CERT unset: expected non-zero exit + no cert file"
@@ -112,9 +113,9 @@ echo "== happy path =="
 t=$(fresh_tree 4)
 out=$(MOK_SIGNING_KEY="$KEY_B64" MOK_SIGNING_CERT="$CERT_B64" "$SCRIPT" "$t" 2>&1)
 rc=$?
-key_path="$t/data/certificates/dozenos-dev-2025-linux.key"
-cert_path="$t/data/certificates/dozenos-dev-2025-linux.pem"
-der_path="$t/data/certificates/dozenos-dev-2025-shim.der"
+key_path="$t/data/certificates/dozenos-dev-${YEAR}-linux.key"
+cert_path="$t/data/certificates/dozenos-dev-${YEAR}-linux.pem"
+der_path="$t/data/certificates/dozenos-dev-${YEAR}-shim.der"
 
 if [ "$rc" -eq 0 ]; then ok "happy path: exits 0 ($out)"; else bad "happy path: expected exit 0, got $rc ($out)"; fi
 if [ -f "$key_path" ]; then ok "key written at hook-expected path"; else bad "key NOT written at $key_path"; fi
@@ -154,6 +155,20 @@ if "$SCRIPT" "$t" --cleanup >/dev/null 2>&1; then
   ok "second --cleanup is a silent no-op (exit 0)"
 else
   bad "second --cleanup exited non-zero"
+fi
+
+t=$(fresh_tree 5)
+stale="$t/data/certificates/dozenos-dev-2025-linux"
+printf 'stale\n' > "$stale.key"
+printf 'stale\n' > "$stale.pem"
+printf 'stale\n' > "$t/data/certificates/dozenos-dev-2025-shim.der"
+printf 'keep\n' > "$t/data/certificates/README.md"
+"$SCRIPT" "$t" --cleanup >/dev/null 2>&1
+if [ ! -e "$stale.key" ] && [ ! -e "$stale.pem" ] && [ ! -e "$t/data/certificates/dozenos-dev-2025-shim.der" ] \
+  && [ -f "$t/data/certificates/README.md" ]; then
+  ok "--cleanup removes dev files of any year and keeps unrelated files"
+else
+  bad "--cleanup missed a dev file of another year or removed an unrelated file"
 fi
 
 echo "== zero embedded key material =="

@@ -202,3 +202,34 @@ annotation "Process completed with exit code 2", because the step uses
 
 Decision 2026-09-17: keep the target advisory. The user decided not to
 report upstream.
+
+## Secure Boot dev MOK filenames follow the build year (found 2026-10-18)
+
+Symptom: nightly run 39128589894 failed every `build-image` leg in the
+`lb build` chroot hook stage:
+
+    I: Signing key for Linux Kernel not found - Secure Boot not possible
+    Found private key - bailing out: /var/lib/shim-signed/mok/dozenos-dev-2025-linux.key
+    E: config/hooks/live/93-sb-sign-kernel.chroot failed (exit non-zero).
+
+Cause: upstream vyos-build `b5155b11` (2026-10-17) made the hook read
+`dozenos-dev-${CA_YEAR}-linux.{key,pem}` with `CA_YEAR="$(date +%Y)"`.
+`inject-mok-cert.sh` still wrote `dozenos-dev-2025-*`. The hook did not
+find a 2026 key, skipped signing, and did not remove the injected 2025
+key. The final check (upstream `53b4043e`) scans
+`/var/lib/shim-signed/mok/` for any PEM private key header and fails the
+build when it finds one. Before `53b4043e` the check looked only for
+`BEGIN PRIVATE KEY`.
+
+Fix: `inject-mok-cert.sh` names the files with `date +%Y`, the same rule
+as the hook and `check-qemu-install`. `--cleanup` removes dev files of
+every year. The MOK key and cert are unchanged: only the filenames carry
+the year. No secret change is needed.
+
+Residual risk: the year is computed twice, in the inject step and in the
+chroot hook. A build that crosses midnight UTC on 31 December fails the
+same way. Upstream has the same property. Re-run the build.
+
+The upstream `install mok` op-mode command is gone (`b5155b11`). The image
+test enrolls the shim cert with `mokutil --ignore-keyring --import`.
+

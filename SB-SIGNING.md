@@ -9,6 +9,17 @@ exact secret names/formats, `data/certificates/README.md` (shipped via
 `release/inject-mok-cert.sh` for the injection helper this document
 describes the usage of.
 
+## 0. Year-based dev filenames (2026-10-18)
+
+Upstream vyos-build `b5155b11` (2026-10-17, PR #1328) changed
+`93-sb-sign-kernel.chroot` and `scripts/check-qemu-install` to read
+`dozenos-dev-$(date +%Y)-linux.{key,pem}` and `dozenos-dev-$(date +%Y)-shim.der`.
+The fixed `2025` name is gone. `release/inject-mok-cert.sh` now writes the
+three files under the current year, and `--cleanup` removes every
+`dozenos-dev-*` dev file. The `2025` names in the older sections below are
+history. See `LANDMINES.md` "Secure Boot dev MOK filenames follow the
+build year".
+
 ## 1. Two separate signing chains — do not conflate them
 
 DozenOS (inherited from upstream VyOS) has **two independent** module/kernel
