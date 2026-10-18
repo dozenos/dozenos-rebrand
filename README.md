@@ -34,6 +34,10 @@ diverge from upstream instead of just rebranding it. The transform's own
 files, where `vyos` is data, not a shipped artifact) while leaving every
 `vyatta` occurrence exactly as upstream wrote it.
 
+One pre-pass runs before the four forms: `docker.io/vyos/` becomes
+`ghcr.io/dozenos/` (`REGISTRY_REWRITES`), where DozenOS publishes the
+smoketest container images (`OCI-SMOKETEST-IMAGES.md`).
+
 ## Key scripts and directories
 
 - **`rename-transform.sh`** / **`rebrand-map.conf`** -- the deterministic

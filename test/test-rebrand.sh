@@ -106,6 +106,10 @@ EOF
   # including non-`Copyright:` lines carrying vyos URLs/emails.
   printf 'Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/\nSource: https://github.com/vyos/vyos-1x\nUpstream-Contact: VyOS maintainers <maintainers@vyos.net>\n\nFiles: *\nCopyright: VyOS Networks\nLicense: GPL-2+\n' > "$t/debian/copyright"
 
+  # Docker Hub image refs: docker.io/vyos/ is rewritten to the ghcr.io/dozenos/
+  # namespace DozenOS publishes (REGISTRY_REWRITES), not docker.io/dozenos/.
+  printf 'TACPLUS_TAG="docker.io/vyos/tacacs_plus:alpine-slim"\nradius_image = %s\nBUSYBOX_TAG="docker.io/library/busybox:stable"\n' "'docker.io/vyos/radius_server:latest'" > "$t/src/smoketest-images.sh"
+
   # systemd service (name + content)
   printf '[Unit]\nDescription=VyOS router\n[Service]\nExecStart=/usr/libexec/vyos/init\n' \
     > "$t/src/systemd/vyos-router.service"
@@ -244,6 +248,19 @@ run_asserts() {
     else
       bad "lowercase copyright line was wrongly preserved"
       cat "$tree/src/lint-target-makefile"
+    fi
+  fi
+
+  # (3d) Docker Hub vyos namespace rewritten to ghcr.io/dozenos, other
+  # registries untouched
+  if [ -f "$tree/src/smoketest-images.sh" ]; then
+    if grep -qxF 'TACPLUS_TAG="ghcr.io/dozenos/tacacs_plus:alpine-slim"' "$tree/src/smoketest-images.sh" \
+       && grep -qxF "radius_image = 'ghcr.io/dozenos/radius_server:latest'" "$tree/src/smoketest-images.sh" \
+       && grep -qxF 'BUSYBOX_TAG="docker.io/library/busybox:stable"' "$tree/src/smoketest-images.sh"; then
+      ok "docker.io/vyos/ rewritten to ghcr.io/dozenos/ (REGISTRY_REWRITES)"
+    else
+      bad "registry rewrite mismatch"
+      cat "$tree/src/smoketest-images.sh"
     fi
   fi
 
