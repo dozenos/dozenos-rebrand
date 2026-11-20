@@ -210,16 +210,45 @@ jobs:
             # vpp) -- same branch and rationale as rebuild-dispatch.yml's
             # build step.
             docker run --rm \
+              -e PYTHONUNBUFFERED=1 \
               -v "${{ github.workspace }}/dozenos-build:/dozenos" \
               -w /dozenos \
               ghcr.io/dozenos/dozenos-build:rolling \
-              bash -c "cd scripts/package-build/linux-kernel && python3 build.py"
+              bash -c "cd scripts/package-build/linux-kernel && python3 build.py" 2>&1 | tee "$RUNNER_TEMP/build.log"
           else
             docker run --rm \
+              -e PYTHONUNBUFFERED=1 \
               -v "${{ github.workspace }}/dozenos-build:/dozenos" \
               -w /dozenos \
               ghcr.io/dozenos/dozenos-build:rolling \
-              bash -c "cd scripts/package-build/${{ matrix.pkg }} && python3 ../build.py"
+              bash -c "cd scripts/package-build/${{ matrix.pkg }} && python3 ../build.py" 2>&1 | tee "$RUNNER_TEMP/build.log"
+          fi
+          if failed=$(grep -E 'Failed to build package [^ ]+: |Error copying packages: ' "$RUNNER_TEMP/build.log"); then
+            while IFS= read -r line; do
+              echo "::error::${{ matrix.pkg }}: $line"
+            done <<<"$failed"
+            exit 1
+          fi
+
+      # The build clones branch-tracking inputs (e.g. dozenos-vpp-patches)
+      # after the key was computed. Store only if the key still matches.
+      - name: Re-check deb-cache key after build
+        id: recheck
+        if: steps.cachekey.outputs.key != '' && steps.probe.outputs.hit != 'true'
+        run: |
+          set -euo pipefail
+          if KEY=$(dozenos-rebrand/release/deb-cache.sh key \
+                --unit "${{ matrix.pkg }}" \
+                --build dozenos-build \
+                --rebrand dozenos-rebrand \
+                --manifest "$RUNNER_TEMP/deb-cache-manifest-post.json") \
+              && [ "$KEY" = "${{ steps.cachekey.outputs.key }}" ]; then
+            echo "same=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::deb-cache key inputs of ${{ matrix.pkg }} changed during the build (or the re-check failed) -- not storing this set"
+            diff <(jq -r '.material[]' "$RUNNER_TEMP/deb-cache-manifest.json") \
+                 <(jq -r '.material[]' "$RUNNER_TEMP/deb-cache-manifest-post.json" 2>/dev/null) || true
+            echo "same=false" >> "$GITHUB_OUTPUT"
           fi
 
       # Token minted AFTER the build (App tokens live ~1h; a slow leg would
@@ -227,7 +256,7 @@ jobs:
       # failure must never fail the rebuild itself.
       - name: Mint GitHub App token (deb-cache store)
         id: cache_token
-        if: steps.cachekey.outputs.key != '' && steps.probe.outputs.hit != 'true'
+        if: steps.recheck.outputs.same == 'true'
         continue-on-error: true
         uses: actions/create-github-app-token@v3
         with:
@@ -237,7 +266,7 @@ jobs:
           repositories: dozenos-deb-cache
 
       - name: Store built debs into deb cache
-        if: steps.cache_token.outcome == 'success' && steps.cachekey.outputs.key != '' && steps.probe.outputs.hit != 'true'
+        if: steps.cache_token.outcome == 'success' && steps.recheck.outputs.same == 'true'
         continue-on-error: true
         env:
           GH_TOKEN: ${{ steps.cache_token.outputs.token }}
