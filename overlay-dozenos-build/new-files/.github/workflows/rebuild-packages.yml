@@ -114,10 +114,16 @@ jobs:
               changed_files=$(git diff --name-only "$BEFORE" "$AFTER" -- scripts/package-build/ 2>/dev/null) \
                 || diff_ok=0
             fi
-            if [ "$diff_ok" = 1 ]; then
+            if [ "$diff_ok" = 1 ] && printf '%s\n' "$changed_files" | grep -qxF scripts/package-build/build.py; then
+              echo "I: scripts/package-build/build.py changed (deb-cache key input of every unit) -- rebuilding the FULL package set"
+              packages=$(discover_all)
+            elif [ "$diff_ok" = 1 ]; then
               changed=$(printf '%s\n' "$changed_files" \
                 | awk -F/ '{print $3}' | sed 's/^vpp$/linux-kernel/' \
                 | sort -u | grep -vxE 'shim-signed|unionfs-fuse' || true)
+              changed=$(printf '%s\n' "$changed" | while IFS= read -r u; do
+                [ -n "$u" ] && [ -d "scripts/package-build/$u" ] && printf '%s\n' "$u"
+              done || true)
               packages=$(printf '%s\n' "$changed" | jq -R . | jq -sc 'map(select(length > 0))')
             else
               echo "::warning::cannot diff $BEFORE..$AFTER (branch creation or force-push) -- falling back to the FULL package set (deb-cache keeps unchanged units cheap)"
